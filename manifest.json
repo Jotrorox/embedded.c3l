@@ -1,0 +1,7 @@
+{
+  "provides" : "embedded",
+  "sources" : [ "src/**" ],
+  "linklib-dir" : "linked-libs",
+  "targets" : {
+  }
+}
