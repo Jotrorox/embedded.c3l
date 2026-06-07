@@ -1,0 +1,21 @@
+module embedded::gpio;
+
+typedef Pin = inline ushort;
+
+constdef PinMode : inline char {
+    INPUT = 0,
+    OUTPUT = 1,
+    INPUT_PULLUP = 2,
+    INPUT_PULLDOWN = 3,
+    ANALOG = 4,
+    ALT = 255,
+}
+
+constdef PinState : inline char {
+    LOW = 0,
+    HIGH = 1,
+}
+
+fn void pin_mode(Pin pin, PinMode mode);
+fn void digital_write(Pin pin, PinState state);
+fn PinState digital_read(Pin pin);

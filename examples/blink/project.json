@@ -1,0 +1,25 @@
+{
+  "langrev": "1",
+  "authors": [ "Johannes (jotrorox) Müller" ],
+  "version": "0.1.0",
+  "warnings": [ "no-unused" ],
+  "dependency-search-paths": [ "../../.." ],
+  "dependencies": [ "embedded" ],
+  "sources": [ "src/**" ],
+  "build-dir": "build",
+  "output": "build",
+  "targets": {
+    "blink-arduino-uno": {
+      "type": "executable",
+      "preset": "embedded:arduino_uno",
+      "name": "blink-arduino-uno",
+      "extension": ".elf"
+    },
+    "blink-esp32c3": {
+      "type": "executable",
+      "preset": "embedded:esp32c3_devkit",
+      "name": "blink-esp32c3",
+      "extension": ".elf"
+    }
+  }
+}

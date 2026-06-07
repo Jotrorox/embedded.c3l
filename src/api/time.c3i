@@ -1,0 +1,6 @@
+module embedded::time;
+
+fn void delay_ms(uint ms);
+fn void delay_us(uint us);
+fn ulong millis();
+fn ulong micros();
