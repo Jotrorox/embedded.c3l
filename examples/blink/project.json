@@ -6,7 +6,6 @@
   "dependency-search-paths": [ "../../.." ],
   "dependencies": [ "embedded" ],
   "sources": [ "src/**" ],
-  "build-dir": "build",
   "output": "build",
   "targets": {
     "blink-arduino-uno": {
