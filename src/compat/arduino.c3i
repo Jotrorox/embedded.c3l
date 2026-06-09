@@ -11,18 +11,13 @@ constdef PinMode : inline char {
     ALT = 255,
 }
 
-const gpio::PinState LOW = gpio::PinState.LOW;
-const gpio::PinState HIGH = gpio::PinState.HIGH;
-
-const PinMode INPUT = PinMode.INPUT;
-const PinMode OUTPUT = PinMode.OUTPUT;
-const PinMode INPUT_PULLUP = PinMode.INPUT_PULLUP;
-const PinMode INPUT_PULLDOWN = PinMode.INPUT_PULLDOWN;
-const PinMode ANALOG = PinMode.ANALOG;
-const PinMode ALT = PinMode.ALT;
+constdef PinState : inline char {
+	LOW = 0,
+	HIGH = 1,
+}
 
 fn void pin_mode(gpio::Pin pin, PinMode mode);
-fn void digital_write(gpio::Pin pin, gpio::PinState state);
+fn void digital_write(gpio::Pin pin, PinState state);
 fn gpio::PinState digital_read(gpio::Pin pin);
 
 fn void delay(ulong milliseconds);

@@ -17,8 +17,8 @@ fn void pin_mode(gpio::Pin pin, PinMode mode) {
     }
 }
 
-fn void digital_write(gpio::Pin pin, gpio::PinState state) {
-    (void)gpio::write(pin, state);
+fn void digital_write(gpio::Pin pin, PinState state) {
+    (void)gpio::write(pin, (gpio::PinState)state);
 }
 
 fn gpio::PinState digital_read(gpio::Pin pin) {
