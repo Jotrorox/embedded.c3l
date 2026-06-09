@@ -8,7 +8,7 @@ not import AVR, ESP32-C3, or other backend-specific modules directly.
 ## Supported Presets
 
 - `embedded:arduino_uno`
-- `embedded:esp32c3_devkit`
+- `embedded:esp32c3_supermini`
 
 ## Examples
 
@@ -17,6 +17,17 @@ cd examples/blink
 c3c build blink-arduino-uno
 c3c build blink-esp32c3
 ```
+
+## ToDo (central APIs)
+- [X] Digital I/O
+- [x] Time / monotonic clock
+- [ ] PWM
+- [ ] ADC
+- [ ] UART
+- [ ] I2C
+- [ ] External Interrupts
+- [ ] SPI
+- [ ] Clocks + Timers
 
 Copyright (c) 2026 Johannes (jotrorox) Muller.
 

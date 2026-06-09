@@ -2,7 +2,8 @@
   "provides": "embedded",
   "linklib-dir": "linked-libs",
   "sources": [
-    "src/api/**"
+    "src/api/**",
+    "src/compat/**"
   ],
   "presets": {
     "arduino_uno": {
@@ -24,7 +25,7 @@
         "BACKEND_AVR"
       ]
     },
-    "esp32c3_devkit": {
+    "esp32c3_supermini": {
       "target": "elf-riscv32",
       "cpu": "rvimac",
       "cpu-flags": "+m",
@@ -42,7 +43,7 @@
       "link-libc": false,
       "no-entry": true,
       "features": [
-        "BOARD_ESP32C3_DEVKIT",
+        "BOARD_ESP32C3_SUPERMINI",
         "MCU_ESP32C3",
         "BACKEND_ESP32C3"
       ]
@@ -60,9 +61,9 @@
         "src/backends/avr/atmega328p/**"
       ]
     },
-    "BOARD_ESP32C3_DEVKIT": {
+    "BOARD_ESP32C3_SUPERMINI": {
       "sources": [
-        "src/boards/esp32c3_devkit/**"
+        "src/boards/esp32c3_supermini/**"
       ]
     },
     "MCU_ESP32C3": {

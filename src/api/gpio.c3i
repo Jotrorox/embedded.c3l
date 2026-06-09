@@ -2,20 +2,70 @@ module embedded::gpio;
 
 typedef Pin = inline ushort;
 
-constdef PinMode : inline char {
-    INPUT = 0,
-    OUTPUT = 1,
-    INPUT_PULLUP = 2,
-    INPUT_PULLDOWN = 3,
-    ANALOG = 4,
-    ALT = 255,
-}
+faultdef INVALID_PIN,
+    UNSUPPORTED_MODE,
+    UNSUPPORTED_PULL,
+    UNSUPPORTED_DRIVE,
+    PIN_RESERVED,
+    PIN_NOT_GPIO_CAPABLE,
+    PERIPHERAL_CONFLICT;
 
 constdef PinState : inline char {
     LOW = 0,
     HIGH = 1,
 }
 
-fn void pin_mode(Pin pin, PinMode mode);
-fn void digital_write(Pin pin, PinState state);
-fn PinState digital_read(Pin pin);
+constdef Direction : inline char {
+    INPUT,
+    OUTPUT,
+    INPUT_OUTPUT,
+    DISABLED,
+}
+
+constdef Pull : inline char {
+    NONE,
+    UP,
+    DOWN,
+    UP_DOWN,
+}
+
+constdef OutputType : inline char {
+    PUSH_PULL,
+    OPEN_DRAIN,
+}
+
+constdef DriveStrength : inline char {
+    DEFAULT,
+    LOW,
+    MEDIUM,
+    HIGH,
+}
+
+constdef Capability : inline char {
+    INPUT,
+    OUTPUT,
+    INPUT_OUTPUT,
+    PULL_UP,
+    PULL_DOWN,
+    PULL_UP_DOWN,
+    OPEN_DRAIN,
+    DRIVE_STRENGTH,
+}
+
+struct Config {
+    Direction direction;
+    Pull pull;
+    OutputType output_type;
+    DriveStrength drive_strength;
+    PinState initial_state;
+}
+
+fn bool is_valid(Pin pin);
+fn bool supports(Pin pin, Capability cap);
+
+fn void? configure(Pin pin, Config config);
+fn void? write(Pin pin, PinState state);
+fn PinState? read(Pin pin);
+fn void? toggle(Pin pin);
+fn PinState? read_output(Pin pin);
+fn void? reset(Pin pin);

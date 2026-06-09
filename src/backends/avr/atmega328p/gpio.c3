@@ -56,27 +56,57 @@ fn void disable_pwm(Pin pin) {
     }
 }
 
-fn void pin_mode(Pin pin, PinMode mode) {
-    if ((int)pin < 0 || (int)pin >= 20) return;
+fn bool is_valid(Pin pin) {
+    return (uint)pin < 20;
+}
+
+fn bool supports(Pin pin, Capability cap) {
+    if (!is_valid(pin)) return false;
+    switch (cap) {
+        case Capability.INPUT:
+        case Capability.OUTPUT:
+        case Capability.PULL_UP:
+            return true;
+        default:
+            return false;
+    }
+}
+
+fn void? configure(Pin pin, Config config) {
+    if (!is_valid(pin)) return INVALID_PIN~;
+    if (config.direction == Direction.INPUT_OUTPUT || config.direction == Direction.DISABLED) return UNSUPPORTED_MODE~;
+    if (config.pull == Pull.DOWN || config.pull == Pull.UP_DOWN) return UNSUPPORTED_PULL~;
+    if (config.output_type == OutputType.OPEN_DRAIN) return UNSUPPORTED_DRIVE~;
+    if (config.drive_strength != DriveStrength.DEFAULT) return UNSUPPORTED_DRIVE~;
+
     disable_pwm(pin);
     char bit = get_bit(pin);
     char ddr = get_ddr(pin);
     char port = get_port(pin);
-    switch (mode) {
-        case PinMode.OUTPUT:
+
+    switch (config.direction) {
+        case Direction.OUTPUT:
+            if (config.pull != Pull.NONE) return UNSUPPORTED_PULL~;
+            if (config.initial_state == PinState.HIGH) {
+                reg_set(port, bit);
+            } else {
+                reg_clr(port, bit);
+            }
             reg_set(ddr, bit);
-        case PinMode.INPUT:
+        case Direction.INPUT:
             reg_clr(ddr, bit);
-            reg_clr(port, bit);
-        case PinMode.INPUT_PULLUP:
-            reg_clr(ddr, bit);
-            reg_set(port, bit);
+            if (config.pull == Pull.UP) {
+                reg_set(port, bit);
+            } else {
+                reg_clr(port, bit);
+            }
         default:
+            return UNSUPPORTED_MODE~;
     }
 }
 
-fn void digital_write(Pin pin, PinState state) {
-    if ((int)pin < 0 || (int)pin >= 20) return;
+fn void? write(Pin pin, PinState state) {
+    if (!is_valid(pin)) return INVALID_PIN~;
     disable_pwm(pin);
     char bit = get_bit(pin);
     char port = get_port(pin);
@@ -87,9 +117,29 @@ fn void digital_write(Pin pin, PinState state) {
     }
 }
 
-fn PinState digital_read(Pin pin) {
-    if ((int)pin < 0 || (int)pin >= 20) return PinState.LOW;
+fn PinState? read(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
     char bit = get_bit(pin);
     char pin_reg = get_pin_reg(pin);
     return (reg_read(pin_reg) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn void? toggle(Pin pin) {
+    PinState state = read_output(pin)!!;
+    write(pin, state == PinState.HIGH ? PinState.LOW : PinState.HIGH)!!;
+}
+
+fn PinState? read_output(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
+    char bit = get_bit(pin);
+    char port = get_port(pin);
+    return (reg_read(port) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn void? reset(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
+    disable_pwm(pin);
+    char bit = get_bit(pin);
+    reg_clr(get_ddr(pin), bit);
+    reg_clr(get_port(pin), bit);
 }

@@ -16,7 +16,7 @@
     },
     "blink-esp32c3": {
       "type": "executable",
-      "preset": "embedded:esp32c3_devkit",
+      "preset": "embedded:esp32c3_supermini",
       "name": "blink-esp32c3",
       "extension": ".elf"
     }

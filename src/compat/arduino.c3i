@@ -1,0 +1,34 @@
+module embedded::compat::arduino;
+
+import embedded::gpio;
+
+constdef PinMode : inline char {
+    INPUT = 0,
+    OUTPUT = 1,
+    INPUT_PULLUP = 2,
+    INPUT_PULLDOWN = 3,
+    ANALOG = 4,
+    ALT = 255,
+}
+
+const gpio::PinState LOW = gpio::PinState.LOW;
+const gpio::PinState HIGH = gpio::PinState.HIGH;
+
+const PinMode INPUT = PinMode.INPUT;
+const PinMode OUTPUT = PinMode.OUTPUT;
+const PinMode INPUT_PULLUP = PinMode.INPUT_PULLUP;
+const PinMode INPUT_PULLDOWN = PinMode.INPUT_PULLDOWN;
+const PinMode ANALOG = PinMode.ANALOG;
+const PinMode ALT = PinMode.ALT;
+
+fn void pin_mode(gpio::Pin pin, PinMode mode);
+fn void digital_write(gpio::Pin pin, gpio::PinState state);
+fn gpio::PinState digital_read(gpio::Pin pin);
+
+fn void delay(ulong milliseconds);
+fn void delay_ms(ulong milliseconds);
+fn void delay_us(ulong microseconds);
+fn void delay_microseconds(ulong microseconds);
+fn void delayMicroseconds(ulong microseconds);
+fn ulong millis();
+fn ulong micros();

@@ -15,6 +15,9 @@ const char TOV0_BIT    = 0x01;
 const uint MILLIS_INC = 1;
 const char FRACT_INC = 3;
 const char FRACT_MAX = 125;
+const ulong ULONG_MAX_VALUE = 0xFFFF_FFFF_FFFF_FFFF;
+const ulong MAX_MS_VALUE = 18_446_744_073_709_551;
+const ulong MAX_SECONDS_VALUE = 18_446_744_073_709;
 
 uint timer0_overflow_count = 0;
 uint timer0_millis = 0;
@@ -43,17 +46,47 @@ fn void embedded_avr_time_init() @export("embedded_avr_time_init") {
     timer0_time_active = true;
 }
 
-fn ulong millis() {
-    embedded_avr_time_init();
+fn Duration scale_duration_saturating(ulong value, uint factor) {
+    ulong result = 0;
+    ulong addend = value;
+    uint remaining = factor;
 
-    char old_sreg = reg_read(SREG);
-    asm("cli");
-    uint m = @volatile_load(timer0_millis);
-    reg_write(SREG, old_sreg);
-    return (ulong)m;
+    while (remaining > 0) {
+        if ((remaining & 1) != 0) {
+            if (ULONG_MAX_VALUE - result < addend) return { ULONG_MAX_VALUE };
+            result += addend;
+        }
+        remaining >>= 1;
+        if (remaining > 0) {
+            if (ULONG_MAX_VALUE - addend < addend) {
+                addend = ULONG_MAX_VALUE;
+            } else {
+                addend += addend;
+            }
+        }
+    }
+
+    return { result };
 }
 
-fn ulong micros() {
+fn ulong div_u64_u32(ulong value, uint divisor) {
+    ulong quotient = 0;
+    ulong remainder = 0;
+    int bit = 63;
+
+    while (bit >= 0) {
+        remainder = (remainder << 1) | ((value >> bit) & 1);
+        if (remainder >= (ulong)divisor) {
+            remainder -= (ulong)divisor;
+            quotient |= (ulong)1 << bit;
+        }
+        bit--;
+    }
+
+    return quotient;
+}
+
+fn ulong read_micros() {
     embedded_avr_time_init();
 
     char old_sreg = reg_read(SREG);
@@ -68,22 +101,73 @@ fn ulong micros() {
     return (ulong)(((m << 8) + (uint)t) << 2);
 }
 
-fn void delay_ms(uint ms) {
-    if (ms == 0) return;
-
-    ulong start = micros();
-    while (ms > 0) {
-        if ((micros() - start) >= 1000) {
-            ms--;
-            start += 1000;
-        }
-    }
+fn ClockInfo clock_info() {
+    return { 1_000_000, 4, true, true };
 }
 
-fn void delay_us(uint us) {
-    if (us <= 1) return;
-    ulong start = micros();
-    while ((micros() - start) < (ulong)us) {}
+fn Duration us(ulong value) {
+    return { value };
+}
+
+fn Duration ms(ulong value) {
+    if (value > MAX_MS_VALUE) return { ULONG_MAX_VALUE };
+    return scale_duration_saturating(value, 1000);
+}
+
+fn Duration seconds(ulong value) {
+    if (value > MAX_SECONDS_VALUE) return { ULONG_MAX_VALUE };
+    return scale_duration_saturating(value, 1_000_000);
+}
+
+fn ulong as_us(Duration duration) {
+    return duration.micros;
+}
+
+fn ulong as_ms(Duration duration) {
+    return div_u64_u32(duration.micros, 1000);
+}
+
+fn Duration duration_add(Duration lhs, Duration rhs) {
+    if (ULONG_MAX_VALUE - lhs.micros < rhs.micros) return { ULONG_MAX_VALUE };
+    return { lhs.micros + rhs.micros };
+}
+
+fn Duration duration_sub_saturating(Duration lhs, Duration rhs) {
+    if (lhs.micros < rhs.micros) return { 0 };
+    return { lhs.micros - rhs.micros };
+}
+
+fn bool duration_is_zero(Duration duration) {
+    return duration.micros == 0;
+}
+
+fn Instant now() {
+    return { (Ticks)read_micros() };
+}
+
+fn Duration elapsed_since(Instant start) {
+    return elapsed_between(start, now());
+}
+
+fn Duration elapsed_between(Instant start, Instant end) {
+    return { (ulong)(end.ticks - start.ticks) };
+}
+
+fn Instant deadline_after(Duration duration) {
+    return { (Ticks)(now().ticks + duration.micros) };
+}
+
+fn bool has_elapsed(Instant deadline) {
+    return (long)(now().ticks - deadline.ticks) >= 0;
+}
+
+fn void sleep(Duration duration) {
+    if (duration_is_zero(duration)) return;
+    sleep_until(deadline_after(duration));
+}
+
+fn void sleep_until(Instant deadline) {
+    while (!has_elapsed(deadline)) {}
 }
 
 fn void timer0_ovf_impl() @export("timer0_ovf_impl") {

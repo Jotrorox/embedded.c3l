@@ -1,0 +1,42 @@
+Flashing the blink example
+==========================
+
+This example builds two firmware images:
+
+- Arduino Uno:  build/blink-arduino-uno.hex
+- ESP32-C3:     build/blink-esp32c3.elf
+
+Device ports used on this machine
+---------------------------------
+
+- Arduino Uno: /dev/ttyACM0
+- ESP32-C3:    /dev/ttyACM1
+
+You can confirm connected devices with:
+
+    ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+
+Arduino Uno
+-----------
+
+Flash the prebuilt HEX file with avrdude:
+
+    avrdude -v -patmega328p -carduino -P/dev/ttyACM0 -b115200 -D -Uflash:w:build/blink-arduino-uno.hex:i
+
+ESP32-C3
+--------
+
+First convert the ELF file to an ESP32-C3 binary image:
+
+    esptool.py --chip esp32c3 elf2image --flash-mode dio --flash-freq 40m --flash-size 4MB -o build/blink-esp32c3.bin build/blink-esp32c3.elf
+
+Then flash it:
+
+    esptool.py --chip esp32c3 -p /dev/ttyACM1 -b 460800 write_flash --flash-mode dio --flash-freq 40m --flash-size 4MB 0x0 build/blink-esp32c3.bin
+
+Notes
+-----
+
+- If your board appears on a different serial port, replace /dev/ttyACM0 or /dev/ttyACM1 accordingly.
+- The Arduino Uno was identified as an ATmega328P device.
+- The ESP32-C3 was identified as an Espressif USB JTAG/serial debug unit.

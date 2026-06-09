@@ -4,6 +4,7 @@ const uint GPIO_BASE = 0x6000_4000;
 const uint IO_MUX_BASE = 0x6000_9000;
 const uint TIMG0_BASE = 0x6001_F000;
 
+const uint GPIO_OUT_REG = GPIO_BASE + 0x004;
 const uint GPIO_OUT_W1TS = GPIO_BASE + 0x008;
 const uint GPIO_OUT_W1TC = GPIO_BASE + 0x00C;
 const uint GPIO_ENABLE_W1TS = GPIO_BASE + 0x024;
@@ -37,9 +38,22 @@ fn void feed_mwdt() {
     reg_write(TIMG0_BASE + TIMG_WDTFEED_OFFSET, 1);
 }
 
-fn bool pin_valid(Pin pin) {
+fn bool is_valid(Pin pin) {
     uint p = (uint)pin;
     return p <= 10 || (p >= 18 && p <= 21);
+}
+
+fn bool supports(Pin pin, Capability cap) {
+    if (!is_valid(pin)) return false;
+    switch (cap) {
+        case Capability.INPUT:
+        case Capability.OUTPUT:
+        case Capability.PULL_UP:
+        case Capability.PULL_DOWN:
+            return true;
+        default:
+            return false;
+    }
 }
 
 fn uint pin_mask(Pin pin) {
@@ -54,29 +68,44 @@ fn uint pin_out_sel_reg(Pin pin) {
     return GPIO_FUNC_OUT_SEL_BASE + (uint)pin * GPIO_FUNC_OUT_SEL_STRIDE;
 }
 
-fn void pin_mode(Pin pin, PinMode mode) {
-    if (!pin_valid(pin)) return;
+fn void? configure(Pin pin, Config config) {
+    if (!is_valid(pin)) return INVALID_PIN~;
     feed_mwdt();
-    switch (mode) {
-        case PinMode.OUTPUT:
+    if (config.direction == Direction.INPUT_OUTPUT || config.direction == Direction.DISABLED) return UNSUPPORTED_MODE~;
+    if (config.pull == Pull.UP_DOWN) return UNSUPPORTED_PULL~;
+    if (config.output_type == OutputType.OPEN_DRAIN) return UNSUPPORTED_DRIVE~;
+    if (config.drive_strength != DriveStrength.DEFAULT) return UNSUPPORTED_DRIVE~;
+
+    switch (config.direction) {
+        case Direction.OUTPUT:
+            if (config.pull != Pull.NONE) return UNSUPPORTED_PULL~;
+            if (config.initial_state == PinState.HIGH) {
+                reg_write(GPIO_OUT_W1TS, pin_mask(pin));
+            } else {
+                reg_write(GPIO_OUT_W1TC, pin_mask(pin));
+            }
             reg_write(pin_io_mux_reg(pin), IO_MUX_OUTPUT_VALUE);
             reg_write(pin_out_sel_reg(pin), GPIO_FUNC_OUTPUT_VALUE);
             reg_write(GPIO_ENABLE_W1TS, pin_mask(pin));
-        case PinMode.INPUT:
-            reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_VALUE);
-            reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
-        case PinMode.INPUT_PULLUP:
-            reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_PULLUP_VALUE);
-            reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
-        case PinMode.INPUT_PULLDOWN:
-            reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_PULLDOWN_VALUE);
+        case Direction.INPUT:
+            switch (config.pull) {
+                case Pull.NONE:
+                    reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_VALUE);
+                case Pull.UP:
+                    reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_PULLUP_VALUE);
+                case Pull.DOWN:
+                    reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_PULLDOWN_VALUE);
+                default:
+                    return UNSUPPORTED_PULL~;
+            }
             reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
         default:
+            return UNSUPPORTED_MODE~;
     }
 }
 
-fn void digital_write(Pin pin, PinState state) {
-    if (!pin_valid(pin)) return;
+fn void? write(Pin pin, PinState state) {
+    if (!is_valid(pin)) return INVALID_PIN~;
     feed_mwdt();
     if (state == PinState.HIGH) {
         reg_write(GPIO_OUT_W1TS, pin_mask(pin));
@@ -85,8 +114,27 @@ fn void digital_write(Pin pin, PinState state) {
     }
 }
 
-fn PinState digital_read(Pin pin) {
-    if (!pin_valid(pin)) return PinState.LOW;
+fn PinState? read(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
     feed_mwdt();
     return (reg_read(GPIO_IN_REG) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn void? toggle(Pin pin) {
+    PinState state = read_output(pin)!!;
+    write(pin, state == PinState.HIGH ? PinState.LOW : PinState.HIGH)!!;
+}
+
+fn PinState? read_output(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
+    feed_mwdt();
+    return (reg_read(GPIO_OUT_REG) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn void? reset(Pin pin) {
+    if (!is_valid(pin)) return INVALID_PIN~;
+    feed_mwdt();
+    reg_write(GPIO_OUT_W1TC, pin_mask(pin));
+    reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_VALUE);
+    reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
 }

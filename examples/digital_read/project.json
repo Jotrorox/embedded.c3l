@@ -8,16 +8,16 @@
   "sources": [ "src/**" ],
   "output": "build",
   "targets": {
-    "uart-echo-arduino-uno": {
+    "digital-read-arduino-uno": {
       "type": "executable",
       "preset": "embedded:arduino_uno",
-      "name": "uart-echo-arduino-uno",
+      "name": "digital-read-arduino-uno",
       "extension": ".elf"
     },
-    "uart-echo-esp32c3": {
+    "digital-read-esp32c3": {
       "type": "executable",
-      "preset": "embedded:esp32c3_devkit",
-      "name": "uart-echo-esp32c3",
+      "preset": "embedded:esp32c3_supermini",
+      "name": "digital-read-esp32c3",
       "extension": ".elf"
     }
   }

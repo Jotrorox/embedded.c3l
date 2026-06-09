@@ -1,6 +1,41 @@
 module embedded::time;
 
-fn void delay_ms(uint ms);
-fn void delay_us(uint us);
-fn ulong millis();
-fn ulong micros();
+typedef Ticks = inline ulong;
+
+struct Duration {
+    ulong micros;
+}
+
+struct Instant {
+    Ticks ticks;
+}
+
+struct ClockInfo {
+    uint ticks_per_second;
+    uint resolution_micros;
+    bool is_monotonic;
+    bool wraps;
+}
+
+fn ClockInfo clock_info();
+
+fn Duration us(ulong value);
+fn Duration ms(ulong value);
+fn Duration seconds(ulong value);
+
+fn ulong as_us(Duration duration);
+fn ulong as_ms(Duration duration);
+
+fn Duration duration_add(Duration lhs, Duration rhs);
+fn Duration duration_sub_saturating(Duration lhs, Duration rhs);
+fn bool duration_is_zero(Duration duration);
+
+fn Instant now();
+fn Duration elapsed_since(Instant start);
+fn Duration elapsed_between(Instant start, Instant end);
+
+fn Instant deadline_after(Duration duration);
+fn bool has_elapsed(Instant deadline);
+
+fn void sleep(Duration duration);
+fn void sleep_until(Instant deadline);
