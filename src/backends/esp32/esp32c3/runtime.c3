@@ -1,5 +1,12 @@
 module runtime @private;
 
+fn void* memset(void* dest, int value, usz n) @export("memset")
+{
+	char* p = (char*)dest;
+	for (usz i = 0; i < n; i++) p[i] = (char)value;
+	return dest;
+}
+
 fn int __mulsi3(int a, int b) @export("__mulsi3")
 {
 	uint ua = (uint)a;

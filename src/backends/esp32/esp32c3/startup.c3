@@ -39,7 +39,8 @@ fn void feed_mwdt(uint timer_group_base) {
     reg_write(timer_group_base + TIMG_WDTFEED_OFFSET, 1);
 }
 
-fn void __init() @naked @noreturn @export("__init") @section(".init") {
+fn void __init() @naked @noreturn @export("__init") @section(".text.init") {
+    asm("la sp, __stack_top");
     disable_mwdt(TIMG0_BASE);
     disable_mwdt(TIMG1_BASE);
     reg_write(RTC_CNTL_WDTWPROTECT, TIMG_WDT_WKEY_VALUE);

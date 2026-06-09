@@ -1,0 +1,10 @@
+module embedded::uart;
+
+fn void begin(uint baud);
+fn bool can_read();
+fn char read();
+fn void write_byte(char c);
+fn void print(String s);
+fn void printn(String s);
+fn void printf(String format, args...) @format(0);
+fn void printfn(String format, args...) @format(0);

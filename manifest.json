@@ -56,7 +56,6 @@
     },
     "MCU_ATMEGA328P": {
       "sources": [
-        "src/boards/arduino_uno/**",
         "src/core/core.c3",
         "src/backends/avr/atmega328p/**"
       ]
@@ -68,7 +67,6 @@
     },
     "MCU_ESP32C3": {
       "sources": [
-        "src/boards/esp32c3_devkit/**",
         "src/core/core.c3",
         "src/backends/esp32/esp32c3/**"
       ]

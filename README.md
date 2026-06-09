@@ -10,7 +10,7 @@ not import AVR, ESP32-C3, or other backend-specific modules directly.
 - `embedded:arduino_uno`
 - `embedded:esp32c3_devkit`
 
-## Blink Example
+## Examples
 
 ```sh
 cd examples/blink
