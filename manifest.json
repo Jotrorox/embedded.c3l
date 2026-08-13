@@ -1,30 +1,30 @@
 {
   "provides": "embedded",
   "linklib-dir": "linked-libs",
+
   "sources": [
     "src/api/**",
     "src/compat/**"
   ],
-  "presets": {
+
+  "templates": {
     "arduino_uno": {
       "target": "elf-avr",
       "cpu": "atmega328p",
       "opt": "Oz",
       "linker": "builtin",
+
       "link-args": [
         "-T",
-        "arduino.ld",
+        "linked-libs/elf-avr/arduino.ld",
         "--gc-sections"
       ],
+
       "use-stdlib": false,
       "link-libc": false,
-      "no-entry": true,
-      "features": [
-        "BOARD_ARDUINO_UNO",
-        "MCU_ATMEGA328P",
-        "BACKEND_AVR"
-      ]
+      "no-entry": true
     },
+
     "esp32c3_supermini": {
       "target": "elf-riscv32",
       "cpu": "rvimac",
@@ -34,50 +34,71 @@
       "reloc": "none",
       "opt": "Oz",
       "linker": "builtin",
+
       "link-args": [
         "-T",
-        "esp32c3.ld",
+        "linked-libs/elf-riscv32/esp32c3.ld",
         "--gc-sections"
       ],
+
       "use-stdlib": false,
       "link-libc": false,
-      "no-entry": true,
+      "no-entry": true
+    }
+  },
+
+  "extras": {
+    "board_arduino_uno": {
+      "sources": [
+        "src/boards/arduino_uno/**"
+      ],
+
       "features": [
-        "BOARD_ESP32C3_SUPERMINI",
+        "BOARD_ARDUINO_UNO"
+      ]
+    },
+
+    "mcu_atmega328p": {
+      "sources": [
+        "src/core/core.c3",
+        "src/backends/avr/atmega328p/**"
+      ],
+
+      "features": [
+        "MCU_ATMEGA328P",
+        "BACKEND_AVR"
+      ]
+    },
+
+    "board_esp32c3_supermini": {
+      "sources": [
+        "src/boards/esp32c3_supermini/**"
+      ],
+
+      "features": [
+        "BOARD_ESP32C3_SUPERMINI"
+      ]
+    },
+
+    "mcu_esp32c3": {
+      "sources": [
+        "src/core/core.c3",
+        "src/backends/esp32/esp32c3/**"
+      ],
+
+      "features": [
         "MCU_ESP32C3",
         "BACKEND_ESP32C3"
       ]
     }
   },
-  "features": {
-    "BOARD_ARDUINO_UNO": {
-      "sources": [
-        "src/boards/arduino_uno/**"
-      ]
-    },
-    "MCU_ATMEGA328P": {
-      "sources": [
-        "src/core/core.c3",
-        "src/backends/avr/atmega328p/**"
-      ]
-    },
-    "BOARD_ESP32C3_SUPERMINI": {
-      "sources": [
-        "src/boards/esp32c3_supermini/**"
-      ]
-    },
-    "MCU_ESP32C3": {
-      "sources": [
-        "src/core/core.c3",
-        "src/backends/esp32/esp32c3/**"
-      ]
-    }
-  },
+
   "targets": {
     "elf-avr": {
       "dependencies": [],
       "linked-libraries": []
     },
+
     "elf-riscv32": {
       "dependencies": [],
       "linked-libraries": []
