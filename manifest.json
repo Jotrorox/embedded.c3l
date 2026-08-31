@@ -13,16 +13,14 @@
       "cpu": "atmega328p",
       "opt": "Oz",
       "linker": "builtin",
-
-      "link-args": [
-        "-T",
-        "linked-libs/elf-avr/arduino.ld",
-        "--gc-sections"
-      ],
-
       "use-stdlib": false,
       "link-libc": false,
-      "no-entry": true
+      "no-entry": true,
+      "features": [
+        "BOARD_ARDUINO_UNO",
+        "MCU_ATMEGA328P",
+        "BACKEND_AVR"
+      ]
     },
 
     "esp32c3_supermini": {
@@ -34,59 +32,11 @@
       "reloc": "none",
       "opt": "Oz",
       "linker": "builtin",
-
-      "link-args": [
-        "-T",
-        "linked-libs/elf-riscv32/esp32c3.ld",
-        "--gc-sections"
-      ],
-
       "use-stdlib": false,
       "link-libc": false,
-      "no-entry": true
-    }
-  },
-
-  "extras": {
-    "board_arduino_uno": {
-      "sources": [
-        "src/boards/arduino_uno/**"
-      ],
-
+      "no-entry": true,
       "features": [
-        "BOARD_ARDUINO_UNO"
-      ]
-    },
-
-    "mcu_atmega328p": {
-      "sources": [
-        "src/core/core.c3",
-        "src/backends/avr/atmega328p/**"
-      ],
-
-      "features": [
-        "MCU_ATMEGA328P",
-        "BACKEND_AVR"
-      ]
-    },
-
-    "board_esp32c3_supermini": {
-      "sources": [
-        "src/boards/esp32c3_supermini/**"
-      ],
-
-      "features": [
-        "BOARD_ESP32C3_SUPERMINI"
-      ]
-    },
-
-    "mcu_esp32c3": {
-      "sources": [
-        "src/core/core.c3",
-        "src/backends/esp32/esp32c3/**"
-      ],
-
-      "features": [
+        "BOARD_ESP32C3_SUPERMINI",
         "MCU_ESP32C3",
         "BACKEND_ESP32C3"
       ]
@@ -95,11 +45,31 @@
 
   "targets": {
     "elf-avr": {
+      "sources": [
+        "src/core/core.c3",
+        "src/boards/arduino_uno/**",
+        "src/backends/avr/atmega328p/**"
+      ],
+      "link-args": [
+        "-T",
+        "arduino.ld",
+        "--gc-sections"
+      ],
       "dependencies": [],
       "linked-libraries": []
     },
 
     "elf-riscv32": {
+      "sources": [
+        "src/core/core.c3",
+        "src/boards/esp32c3_supermini/**",
+        "src/backends/esp32/esp32c3/**"
+      ],
+      "link-args": [
+        "-T",
+        "esp32c3.ld",
+        "--gc-sections"
+      ],
       "dependencies": [],
       "linked-libraries": []
     }

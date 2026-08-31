@@ -3,7 +3,7 @@ module blink;
 import embedded::compat::arduino;
 import embedded::board;
 
-fn void main() @export("start") {
+fn void firmware_start() @export("start") {
     arduino::pin_mode(board::Pin.BUILTIN_LED, OUTPUT);
 
     while (true) {

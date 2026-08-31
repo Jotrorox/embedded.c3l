@@ -2,13 +2,13 @@
 
 `embedded.c3l` is a source-selected embedded HAL for C3.
 
-Board presets select the active board and MCU backend. Application code should
+Board templates select the active board and MCU backend. Application code should
 not import AVR, ESP32-C3, or other backend-specific modules directly.
 
-## Supported Presets
+## Supported Templates
 
-- `embedded:arduino_uno`
-- `embedded:esp32c3_supermini`
+- `embedded/arduino_uno`
+- `embedded/esp32c3_supermini`
 
 ## Examples
 

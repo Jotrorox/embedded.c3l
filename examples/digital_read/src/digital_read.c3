@@ -4,10 +4,10 @@ import embedded::gpio;
 import embedded::compat::arduino;
 import embedded::board;
 
-const gpio::Pin BUTTON_PIN @if($feature(BOARD_ARDUINO_UNO)) = board::Pin.A5;
-const gpio::Pin BUTTON_PIN @if($feature(BOARD_ESP32C3_SUPERMINI)) = board::Pin.GPIO9;
+const gpio::Pin BUTTON_PIN @feat(BOARD_ARDUINO_UNO) = board::Pin.A5;
+const gpio::Pin BUTTON_PIN @feat(BOARD_ESP32C3_SUPERMINI) = board::Pin.GPIO9;
 
-fn void main() @export("start") {
+fn void firmware_start() @export("start") {
     arduino::pin_mode(BUTTON_PIN, INPUT_PULLUP);
     arduino::pin_mode(board::Pin.BUILTIN_LED, OUTPUT);
 

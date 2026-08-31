@@ -10,13 +10,13 @@
   "targets": {
     "digital-read-arduino-uno": {
       "type": "executable",
-      "preset": "embedded:arduino_uno",
+      "template": "embedded/arduino_uno",
       "name": "digital-read-arduino-uno",
       "extension": ".elf"
     },
     "digital-read-esp32c3": {
       "type": "executable",
-      "preset": "embedded:esp32c3_supermini",
+      "template": "embedded/esp32c3_supermini",
       "name": "digital-read-esp32c3",
       "extension": ".elf"
     }
