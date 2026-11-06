@@ -21,7 +21,7 @@ c3c build blink-esp32c3
 ## ToDo (central APIs)
 - [X] Digital I/O
 - [x] Time / monotonic clock
-- [x] Watchdog (disable / feed)
+- [x] Watchdog (enable / feed / disable, reset cause)
 - [ ] PWM
 - [ ] ADC
 - [ ] UART

@@ -1,0 +1,24 @@
+{
+  "langrev": "1",
+  "authors": [ "Johannes (jotrorox) Müller" ],
+  "version": "0.1.0",
+  "warnings": [ "no-unused" ],
+  "dependency-search-paths": [ "../../.." ],
+  "dependencies": [ "embedded" ],
+  "sources": [ "src/**" ],
+  "output": "build",
+  "targets": {
+    "watchdog-arduino-uno": {
+      "type": "executable",
+      "template": "embedded/arduino_uno",
+      "name": "watchdog-arduino-uno",
+      "extension": ".elf"
+    },
+    "watchdog-esp32c3": {
+      "type": "executable",
+      "template": "embedded/esp32c3_supermini",
+      "name": "watchdog-esp32c3",
+      "extension": ".elf"
+    }
+  }
+}

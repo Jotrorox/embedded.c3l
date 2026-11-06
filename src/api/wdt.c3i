@@ -1,12 +1,56 @@
 module embedded::wdt;
 
-// Watchdog control. Startup code disables every hardware watchdog it knows
-// about before `start()` runs; nothing else in the library touches a watchdog.
-// Applications that want watchdog protection call `feed()` from their main
-// loop after enabling the watchdog with MCU-specific code.
+import embedded::time;
 
-// Disable all watchdogs that can reset the MCU. Safe to call more than once.
+// Hardware watchdog control.
+//
+// Startup code disables every hardware watchdog the MCU has before `start()`
+// runs, and nothing else in the library touches a watchdog. To get watchdog
+// protection, call `enable()` once and then `feed()` from the main loop more
+// often than the timeout returned by `enable()`. If the firmware stops feeding,
+// the watchdog resets the whole chip. Check `caused_reset()` after boot to see
+// whether that happened.
+//
+// Each backend drives one watchdog:
+//   ATmega328P: the on-chip WDT, clocked by the 128 kHz oscillator. Timeouts
+//               are 16 ms * 2^n (16 ms .. 8.192 s), nominal ±10 %.
+//   ESP32-C3:   timer group 0 main watchdog (MWDT0), clocked by the 40 MHz
+//               crystal and counting in 1 µs ticks (1 µs .. ~71.6 min).
+
+faultdef UNSUPPORTED_TIMEOUT;
+
+struct Info {
+    // Shortest and longest timeout `enable()` accepts.
+    time::Duration min_timeout;
+    time::Duration max_timeout;
+    // Step between timeouts the hardware can represent. On backends with
+    // power-of-two prescalers (AVR) this is the shortest step; larger
+    // timeouts are coarser.
+    time::Duration resolution;
+}
+
+fn Info info();
+
+// Arms the watchdog so it resets the chip if `feed()` is not called within
+// `timeout`. The hardware may not be able to hit `timeout` exactly, so it is
+// rounded up to the next timeout it can represent, and that effective timeout
+// is returned. Also restarts the countdown, so calling it again while the
+// watchdog is running reconfigures it safely.
+//
+// Returns UNSUPPORTED_TIMEOUT if `timeout` is zero or longer than
+// `info().max_timeout`. In that case the watchdog is left as it was.
+fn time::Duration? enable(time::Duration timeout);
+
+// Disables every watchdog that can reset the MCU. Safe to call more than once.
 fn void disable();
 
-// Reset the watchdog timeout. A no-op when every watchdog is disabled.
+// Restarts the watchdog countdown. Cheap, and a no-op when the watchdog is
+// disabled, so it is safe to call from code that does not know whether the
+// watchdog is on.
 fn void feed();
+
+// True while the watchdog enabled by `enable()` is armed.
+fn bool is_enabled();
+
+// True if the most recent reset was caused by a watchdog timeout.
+fn bool caused_reset();

@@ -6,7 +6,7 @@ extern fn void start();
 
 fn void __init() @naked @noreturn @export("__init") @section(".text.init") {
     asm("la sp, __stack_top");
-    wdt::disable();
+    wdt::boot();
 
     start();
     while (true) {}

@@ -109,7 +109,7 @@ fn void __init() @naked @noreturn @export("__init") @section(".init") {
         bss++;
     }
 
-    wdt::disable();
+    wdt::boot();
     embedded_avr_time_init();
     start();
     abort();

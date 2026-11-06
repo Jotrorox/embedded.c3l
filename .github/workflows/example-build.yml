@@ -21,6 +21,7 @@ jobs:
         example:
           - blink
           - digital_read
+          - watchdog
         board:
           - arduino-uno
           - esp32c3
