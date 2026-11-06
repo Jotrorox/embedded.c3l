@@ -1,0 +1,48 @@
+module embedded::pwm;
+
+import embedded::gpio;
+
+// Hardware PWM outputs.
+//
+//     pwm::Channel led = pwm::open(board::Pin.D9, { .frequency_hz = 1000 })!;
+//     led.set_duty(250);                     // 25 %, in permille
+//
+// Frequencies are rounded to what the hardware can produce; `open()` and
+// `set_frequency()` return or store the effective value (see `frequency()`),
+// and fail with UNSUPPORTED_FREQUENCY when it would be off by more than a
+// factor of two. Duty 0 and 1000 give a steady low and high level.
+//
+// Per backend:
+//   ATmega328P: D5/D6 (timer 0, fixed ~977 Hz, because timer 0 is also the
+//               system clock), D9/D10 (timer 1, 16-bit, any frequency from
+//               ~1 Hz to 8 MHz, default 1 kHz) and D3/D11 (timer 2, 8-bit,
+//               61 Hz .. 62.5 kHz in 7 steps, default ~977 Hz). The two pins
+//               of a timer share its frequency: changing one changes both.
+//   ESP32-C3:   any GPIO, up to 6 channels on 4 LEDC timers, ~3 Hz .. 20 MHz
+//               from the 40 MHz crystal, default 1 kHz. Duty resolution is up
+//               to 14 bits and drops at high frequencies. Channels with the
+//               same frequency share a timer; `set_frequency()` never affects
+//               another channel.
+
+faultdef PIN_NOT_PWM_CAPABLE,
+    UNSUPPORTED_FREQUENCY,
+    NO_FREE_CHANNEL;
+
+const uint MAX_DUTY = 1000;
+
+struct Config {
+    uint frequency_hz;  // 0 selects the backend default (or keeps a shared timer's)
+    uint duty_permille; // initial duty, 0 .. MAX_DUTY
+}
+
+fn bool supports(gpio::Pin pin);
+
+// Starts PWM on `pin` with `config`, taking the pin over from GPIO.
+fn Channel? open(gpio::Pin pin, Config config = {});
+
+// Every backend defines the `Channel` handle with these methods:
+//
+//     fn void Channel.set_duty(self, uint permille);     // clamped to MAX_DUTY
+//     fn uint Channel.frequency(self);                   // effective, in Hz
+//     fn uint? Channel.set_frequency(self, uint hz);     // returns the effective value
+//     fn void Channel.close(self);                       // stops, pin back to GPIO input

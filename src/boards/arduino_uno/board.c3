@@ -1,6 +1,7 @@
 module embedded::board;
 
 import embedded::gpio;
+import embedded::uart;
 
 constdef Pin : inline gpio::Pin {
     BUILTIN_LED = 13,
@@ -27,3 +28,15 @@ constdef Pin : inline gpio::Pin {
     A4 = 18,
     A5 = 19,
 }
+
+// The serial port wired to the Uno's USB bridge (D0/D1).
+const uart::Port CONSOLE = uart::Port.UART0;
+
+// Pins of the ATmega328P's fixed bus peripherals. The backends use these
+// pins whatever is passed here; they are listed so code can refer to them.
+const gpio::Pin I2C_SDA  = Pin.A4;
+const gpio::Pin I2C_SCL  = Pin.A5;
+const gpio::Pin SPI_SCK  = Pin.D13;
+const gpio::Pin SPI_MISO = Pin.D12;
+const gpio::Pin SPI_MOSI = Pin.D11;
+const gpio::Pin SPI_SS   = Pin.D10;

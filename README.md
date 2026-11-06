@@ -52,16 +52,49 @@ gpio::configure(board::Pin.D4, { .direction = OUTPUT, .initial_state = HIGH })!;
 gpio::write(board::Pin.D4, LOW)!;
 ```
 
+## Peripherals in short
+
+Each module has its interface in `src/api/<module>.c3i`, which documents the
+per-board pins and limits.
+
+```c3
+// Serial console (Uno: USB bridge on D0/D1, SuperMini: USB-C port).
+uart::Uart console = uart::open(board::CONSOLE)!;
+console.write_line("hello");
+console.write_uint(time::as_ms(time::since_boot()));
+
+// Analog input, PWM output.
+adc::Input pot = adc::open(board::Pin.A0)!;           // GPIO0..4 on the SuperMini
+pwm::Channel led = pwm::open(board::Pin.D9, { .frequency_hz = 1000 })!;
+led.set_duty(pot.read() * pwm::MAX_DUTY / 1023);      // duty in permille
+
+// Pin interrupt (Uno: D2/D3, SuperMini: any GPIO).
+exti::attach(board::Pin.D2, FALLING, &on_button)!;
+
+// Buses on the board's default pins.
+i2c::Bus bus = i2c::open({ .frequency_hz = i2c::FAST_HZ })!;
+bus.write_read(0x48, { 0x00 }, &buffer)!;
+spi::Bus flash = spi::open({ .frequency_hz = 8_000_000, .mode = MODE0 })!;
+
+// Interrupt control.
+irq::@critical() { shared_counter = 0; };
+time::spin(time::us(10));                             // busy-wait, works with interrupts off
+```
+
+The examples cover each module: `uart_echo`, `analog_read`, `pwm_fade`,
+`button_irq`, `i2c_scan`, `spi_loopback`.
+
 ## ToDo (central APIs)
 - [X] Digital I/O
-- [x] Time / monotonic clock
+- [x] Time / monotonic clock (`sleep`, `spin`, `since_boot`)
 - [x] Watchdog (enable / feed / disable, reset cause)
-- [ ] PWM
-- [ ] ADC
-- [ ] UART
-- [ ] I2C
-- [ ] External Interrupts
-- [ ] SPI
+- [x] Interrupt control (`irq`: critical sections, vectors / interrupt matrix)
+- [x] PWM
+- [x] ADC
+- [x] UART (+ USB-Serial-JTAG console on the ESP32-C3)
+- [x] I2C (master)
+- [x] External Interrupts
+- [x] SPI (master)
 - [ ] Clocks + Timers
 
 Copyright (c) 2026 Johannes (jotrorox) Muller.

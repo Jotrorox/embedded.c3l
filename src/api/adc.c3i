@@ -1,0 +1,54 @@
+module embedded::adc;
+
+import embedded::gpio;
+
+// Analog input (single conversions, blocking).
+//
+//     adc::Input pot = adc::open(board::Pin.A0)!;
+//     ushort raw = pot.read();               // 0 .. (1 << resolution_bits()) - 1
+//     uint mv = pot.read_millivolts();       // using the nominal full scale
+//
+// Per backend:
+//   ATmega328P: 10 bits, A0..A5. DEFAULT measures 0..AVCC (assumed 5 V),
+//               INTERNAL 0..1.1 V (bandgap), EXTERNAL 0..AREF. A conversion
+//               takes ~104 µs. The first read after switching reference waits
+//               5 ms for AREF to settle and discards one conversion.
+//   ESP32-C3:   12 bits, ADC1 on GPIO0..GPIO4. DEFAULT is 11 dB attenuation
+//               (about 0..2.5 V), INTERNAL is 0 dB (about 0..0.75 V); there
+//               is no external reference. Readings are not calibrated against
+//               the chip's eFuse data, so expect an offset of tens of mV.
+//
+// `read_millivolts()` scales by the nominal full-scale voltage. With EXTERNAL
+// the library cannot know AREF, so it returns 0: scale `read()` yourself.
+
+faultdef PIN_NOT_ANALOG_CAPABLE,
+    UNSUPPORTED_REFERENCE;
+
+constdef Reference : inline char {
+    DEFAULT,
+    INTERNAL,
+    EXTERNAL,
+}
+
+struct Config {
+    Reference reference;
+}
+
+fn bool supports(gpio::Pin pin);
+fn bool supports_reference(Reference reference);
+fn char resolution_bits();
+
+// Nominal full-scale input voltage for `reference`, 0 if unknown.
+fn uint full_scale_millivolts(Reference reference);
+
+// Prepares `pin` for analog input (its digital input buffer is switched off)
+// and returns a handle.
+fn Input? open(gpio::Pin pin, Config config = {});
+
+// One conversion with the default configuration.
+fn ushort? read(gpio::Pin pin);
+
+// Every backend defines the `Input` handle with these methods:
+//
+//     fn ushort Input.read(self);
+//     fn uint Input.read_millivolts(self);

@@ -1,0 +1,48 @@
+module embedded::exti;
+
+import embedded::gpio;
+import embedded::irq;
+
+// External (pin) interrupts.
+//
+// `attach()` calls a plain function from interrupt context when a pin sees
+// the selected edge or level. It only arms the interrupt; configure the pin
+// first, for example with `gpio::input(pin, UP)`.
+//
+//     fn void on_button() { pressed = true; }
+//     ...
+//     gpio::input(board::Pin.D2, UP)!;
+//     exti::attach(board::Pin.D2, FALLING, &on_button)!;
+//
+// The handler runs with interrupts disabled: keep it short, and share data
+// with the main loop through `@volatile_load`/`@volatile_store` or inside
+// `irq::@critical`.
+//
+// Pins per backend:
+//   ATmega328P: D2 (INT0) and D3 (INT1), all edges and LOW_LEVEL.
+//               (Pin-change interrupts on other pins are not supported yet.)
+//               Defining `__vector_1` / `__vector_2` yourself takes over
+//               INT0 / INT1 and disables this module for that pin.
+//   ESP32-C3:   every GPIO, all edges and both levels. All pins share one
+//               interrupt source, which `attach()` routes through
+//               `irq::attach()` on first use.
+
+faultdef PIN_NOT_INTERRUPT_CAPABLE,
+    UNSUPPORTED_TRIGGER;
+
+constdef Trigger : inline char {
+    RISING,
+    FALLING,
+    BOTH_EDGES,
+    LOW_LEVEL,
+    HIGH_LEVEL,
+}
+
+fn bool supports(gpio::Pin pin, Trigger trigger);
+
+// Replaces any handler already attached to `pin`. The interrupt is armed when
+// this returns; an edge that happened before is discarded.
+fn void? attach(gpio::Pin pin, Trigger trigger, irq::Handler handler);
+
+// Disarms the pin's interrupt. Safe to call for a pin with nothing attached.
+fn void detach(gpio::Pin pin);

@@ -43,11 +43,9 @@ fn void delayMicroseconds(ulong microseconds) {
 }
 
 fn ulong millis() {
-    time::Instant boot = { (time::Ticks)0 };
-    return time::as_ms(time::elapsed_since(boot));
+    return time::as_ms(time::since_boot());
 }
 
 fn ulong micros() {
-    time::Instant boot = { (time::Ticks)0 };
-    return time::as_us(time::elapsed_since(boot));
+    return time::as_us(time::since_boot());
 }

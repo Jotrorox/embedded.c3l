@@ -30,6 +30,12 @@ jobs:
           - blink
           - digital_read
           - watchdog
+          - uart_echo
+          - analog_read
+          - pwm_fade
+          - button_irq
+          - i2c_scan
+          - spi_loopback
         board:
           - arduino-uno
           - esp32c3

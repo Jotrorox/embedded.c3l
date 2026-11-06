@@ -1,0 +1,60 @@
+module embedded::i2c;
+
+import embedded::gpio;
+
+// I2C bus master (blocking, 7-bit addresses).
+//
+//     i2c::Bus bus = i2c::open()!;                      // board default pins, 100 kHz
+//     bus.write(0x3C, { 0x00, 0xAF })!;                 // register write
+//     char[2] raw;
+//     bus.write_read(0x48, { 0x00 }, &raw)!;            // repeated start
+//
+// Every transfer is a complete transaction: START, address, data, STOP. A
+// device that does not answer its address gives ADDRESS_NACK; one that
+// rejects a data byte gives DATA_NACK. Each transaction must finish within
+// `Config.timeout_us`, otherwise the controller is reset and TIMEOUT returned,
+// so a stuck bus cannot hang the firmware.
+//
+// The internal pull-ups are switched on, but they are weak (tens of kΩ); use
+// external 2.2-4.7 kΩ pull-ups for 400 kHz or long wires.
+//
+// Per backend:
+//   ATmega328P: the TWI unit on A4 (SDA) / A5 (SCL), ~31 kHz .. 400 kHz.
+//   ESP32-C3:   I2C0 on any two GPIOs (default board::I2C_SDA/I2C_SCL),
+//               10 kHz .. 400 kHz (up to 1 MHz with strong pull-ups).
+
+faultdef INVALID_PINS,
+    INVALID_ADDRESS,
+    UNSUPPORTED_FREQUENCY,
+    ADDRESS_NACK,
+    DATA_NACK,
+    ARBITRATION_LOST,
+    BUS_ERROR,
+    TIMEOUT;
+
+const uint STANDARD_HZ = 100_000;
+const uint FAST_HZ = 400_000;
+const uint DEFAULT_TIMEOUT_US = 25_000;
+
+struct Config {
+    uint frequency_hz; // 0 selects STANDARD_HZ
+    uint timeout_us;   // per transaction; 0 selects DEFAULT_TIMEOUT_US
+}
+
+// Opens the bus on the board's default pins.
+fn Bus? open(Config config = {});
+
+// The ATmega328P only accepts its fixed pins and returns INVALID_PINS
+// otherwise.
+fn Bus? open_pins(gpio::Pin sda, gpio::Pin scl, Config config = {});
+
+// Every backend defines the `Bus` handle with these methods:
+//
+//     fn void? Bus.write(self, char address, char[] data);
+//     fn void? Bus.read(self, char address, char[] buffer);
+//     // Writes `data`, then reads `buffer` after a repeated START, in one
+//     // transaction (the usual "set register pointer, read" pattern).
+//     fn void? Bus.write_read(self, char address, char[] data, char[] buffer);
+//     fn bool Bus.probe(self, char address);   // true if the address ACKs
+//     fn uint Bus.frequency(self);             // effective SCL frequency
+//     fn void Bus.close(self);

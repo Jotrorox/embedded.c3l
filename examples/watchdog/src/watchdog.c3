@@ -36,5 +36,8 @@ fn void firmware_start() @export("start") {
     }
 
     arduino::digital_write(board::Pin.BUILTIN_LED, HIGH);
-    while (true) {}
+    // The loop needs a body: c3c compiles an empty `while (true) {}` to a trap
+    // instruction, which on AVR is nothing at all, so execution would run off
+    // the end of the function instead of hanging until the watchdog fires.
+    while (true) time::spin(time::ms(1));
 }

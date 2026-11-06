@@ -1,0 +1,80 @@
+module embedded::irq;
+
+// Interrupt control.
+//
+// Global enable/disable and critical sections work the same on every backend.
+// Interrupts are enabled before `start()` runs, because the time module needs
+// them on the ATmega328P.
+//
+// How a handler is installed depends on the interrupt controller:
+//
+//   ATmega328P: fixed vector table. Each vector is a symbol `__vector_N`.
+//               Vectors the library does not use are weak and default to
+//               `__bad_interrupt`, so a handler is installed by defining the
+//               symbol with the `@isr` macro, which saves and restores the
+//               registers and calls a plain function:
+//
+//                   fn void on_compare() @export("on_compare") { ticks++; }
+//                   fn void timer2_compa() @export("__vector_7") @naked
+//                   {
+//                       irq::@isr("on_compare");
+//                   }
+//
+//               The handler must be `@export`ed under the name passed to
+//               `@isr`. `irq::Vector` lists the vector numbers. TIMER0_OVF
+//               (16) belongs to the time module; INT0 (1) and INT1 (2) belong
+//               to `embedded::exti` unless the firmware defines them itself.
+//               `__bad_interrupt` is weak too, so firmware can replace the
+//               default "halt" behaviour for unexpected interrupts.
+//
+//   ESP32-C3:   interrupt matrix. `attach()` routes a peripheral
+//               `irq::Source` to a free CPU interrupt line and calls a plain
+//               function when it fires:
+//
+//                   irq::attach(irq::Source.UART0, &on_uart)!;
+//
+//               All sources are level-triggered: the handler must clear the
+//               peripheral's interrupt flag or it is called again at once.
+//
+// Handlers run with interrupts disabled and must not block.
+
+alias Handler = fn void();
+
+faultdef NO_FREE_LINE,
+    INVALID_SOURCE,
+    INVALID_PRIORITY,
+    ALREADY_ATTACHED;
+
+fn void enable();
+fn void disable();
+fn bool is_enabled();
+
+// Saves the global interrupt state and disables interrupts. Pass the result to
+// `restore()`. Save/restore pairs nest correctly, unlike disable/enable.
+// `State` is a small backend-specific value type.
+fn State save_and_disable();
+fn void restore(State state);
+
+// Runs the body with interrupts disabled and puts the previous interrupt state
+// back afterwards. Keep the body short: interrupts that arrive meanwhile are
+// delayed, and on the ATmega328P a body longer than ~1 ms loses clock ticks.
+//
+//     irq::@critical() { shared_counter = 0; };
+macro void @critical(;@body)
+{
+    State state = save_and_disable();
+    defer restore(state);
+    @body();
+}
+
+// ESP32-C3 only (the ATmega328P uses `@isr` instead):
+//
+//     // Routes `source` to a free CPU line with the given priority (1..15,
+//     // higher wins) and calls `handler` while it is pending.
+//     // Faults: ALREADY_ATTACHED, NO_FREE_LINE, INVALID_SOURCE, INVALID_PRIORITY.
+//     fn void? attach(Source source, Handler handler, char priority = 1);
+//     fn void detach(Source source);
+//
+// ATmega328P only:
+//
+//     macro void @isr($handler);   // body of a `@naked` `__vector_N` function

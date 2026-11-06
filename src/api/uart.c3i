@@ -1,0 +1,101 @@
+module embedded::uart;
+
+import embedded::gpio;
+import embedded::time;
+
+// Serial ports (UART) and the board console.
+//
+// `open()` configures a port on the board's default pins and returns a handle.
+// Writes block until the bytes are in the hardware FIFO; reads never block
+// unless they take a timeout. There is no interrupt-driven buffering: the
+// receive FIFO holds 2 bytes on the ATmega328P and 128 bytes on the ESP32-C3,
+// so poll often enough at high baud rates.
+//
+//     uart::Uart console = uart::open(board::CONSOLE)!;
+//     console.write("hello\n");
+//     if (try c = console.try_read()) console.write_byte(c);
+//
+// Ports per backend (`uart::Port`):
+//   ATmega328P: UART0 on D1 (TX) / D0 (RX), wired to the Uno's USB bridge.
+//   ESP32-C3:   UART0 and UART1 on any GPIO pair (default TX/RX: UART0 on
+//               GPIO21/GPIO20, UART1 on GPIO0/GPIO1), and USB_SERIAL_JTAG,
+//               the chip's built-in USB serial port on GPIO18/19 (the
+//               SuperMini's USB-C socket). USB_SERIAL_JTAG ignores the baud
+//               rate and format. If no host is reading, writes to it wait up
+//               to 50 ms per FIFO and then drop data instead of hanging.
+//
+// `board::CONSOLE` names the port that reaches the computer over USB.
+
+faultdef INVALID_PORT,
+    INVALID_PINS,
+    UNSUPPORTED_BAUD,
+    UNSUPPORTED_FORMAT,
+    NO_DATA,
+    TIMEOUT,
+    FRAMING_ERROR,
+    PARITY_ERROR,
+    OVERRUN;
+
+constdef DataBits : inline char {
+    EIGHT,
+    SEVEN,
+    SIX,
+    FIVE,
+}
+
+constdef Parity : inline char {
+    NONE,
+    EVEN,
+    ODD,
+}
+
+constdef StopBits : inline char {
+    ONE,
+    TWO,
+}
+
+const uint DEFAULT_BAUD = 115_200;
+
+// Every field's zero value is the common default: 115200 baud, 8N1.
+struct Config {
+    uint baud; // 0 selects DEFAULT_BAUD
+    DataBits data_bits;
+    Parity parity;
+    StopBits stop_bits;
+    // Explicit padding: c3c 0.8.6 sizes this struct differently from LLVM on
+    // AVR without it and aborts with an internal assertion.
+    char reserved;
+}
+
+fn bool is_valid(Port port);
+
+// Configures `port` on the board's default pins. Returns UNSUPPORTED_BAUD if
+// the rate cannot be generated within 2.5 %.
+fn Uart? open(Port port, Config config = {});
+
+// Like `open()`, on explicit pins. The ESP32-C3 routes any pair of GPIOs;
+// the ATmega328P only accepts its fixed pins and returns INVALID_PINS
+// otherwise.
+fn Uart? open_pins(Port port, gpio::Pin tx, gpio::Pin rx, Config config = {});
+
+// Every backend defines the `Uart` handle with these methods (listed as
+// comments because a `.c3i` cannot declare methods that a backend defines):
+//
+//     fn void Uart.close(self);               // waits for TX, releases the pins
+//     fn uint Uart.baud(self);                // effective baud rate
+//     fn void Uart.write_byte(self, char byte);
+//     fn void Uart.write(self, char[] bytes); // String converts implicitly
+//     fn void Uart.flush(self);               // waits until the last bit is out
+//     fn bool Uart.can_read(self);
+//     fn char? Uart.try_read(self);           // NO_DATA, or a line error
+//
+// and, shared by all backends (src/api/uart_format.c3):
+//
+//     fn char? Uart.read_byte(self, time::Duration timeout);   // TIMEOUT
+//     fn void Uart.write_line(self, char[] bytes);             // appends "\r\n"
+//     fn void Uart.write_uint(self, ulong value);
+//     fn void Uart.write_int(self, long value);
+//     fn void Uart.write_hex(self, ulong value, char min_digits = 1);
+//
+// A line error (FRAMING_ERROR, PARITY_ERROR, OVERRUN) is returned once and
+// consumes the affected byte; the next read continues with the following one.

@@ -17,11 +17,11 @@ const uint SYSTIMER_TIMER_UNIT0_CORE0_STALL_EN_BIT = 28;
 const uint SYSTIMER_TIMER_UNIT0_UPDATE_BIT = 30;
 const uint SYSTIMER_TIMER_UNIT0_VALUE_VALID_BIT = 29;
 const uint SYSTIMER_UNIT0_HI_MASK = 0x000F_FFFF;
-const uint SYSTEM_SYSTIMER_CLK_EN_BIT = 30;
-const uint SYSTEM_SYSTIMER_RST_BIT = 30;
+const uint SYSTEM_SYSTIMER_CLK_EN_BIT = 29;
+const uint SYSTEM_SYSTIMER_RST_BIT = 29;
 const ulong ULONG_MAX_VALUE = 0xFFFF_FFFF_FFFF_FFFF;
-const ulong MAX_MS_VALUE = 18_446_744_073_709_551;
-const ulong MAX_SECONDS_VALUE = 18_446_744_073_709;
+const ulong MAX_MS_VALUE = ULONG_MAX_VALUE / 1000;
+const ulong MAX_SECONDS_VALUE = ULONG_MAX_VALUE / 1_000_000;
 
 bool delay_timer_ready @local = false;
 
@@ -60,29 +60,6 @@ fn void delay_timer_ensure_init() {
     if (!delay_timer_ready) delay_timer_init();
 }
 
-fn Duration scale_duration_saturating(ulong value, uint factor) {
-    ulong result = 0;
-    ulong addend = value;
-    uint remaining = factor;
-
-    while (remaining > 0) {
-        if ((remaining & 1) != 0) {
-            if (ULONG_MAX_VALUE - result < addend) return { ULONG_MAX_VALUE };
-            result += addend;
-        }
-        remaining >>= 1;
-        if (remaining > 0) {
-            if (ULONG_MAX_VALUE - addend < addend) {
-                addend = ULONG_MAX_VALUE;
-            } else {
-                addend += addend;
-            }
-        }
-    }
-
-    return { result };
-}
-
 fn ulong div_u64_u32(ulong value, uint divisor) {
     ulong quotient = 0;
     ulong remainder = 0;
@@ -115,14 +92,15 @@ fn Duration us(ulong value) {
     return { value };
 }
 
+// The range check makes the multiplication exact.
 fn Duration ms(ulong value) {
     if (value > MAX_MS_VALUE) return { ULONG_MAX_VALUE };
-    return scale_duration_saturating(value, 1000);
+    return { value * 1000 };
 }
 
 fn Duration seconds(ulong value) {
     if (value > MAX_SECONDS_VALUE) return { ULONG_MAX_VALUE };
-    return scale_duration_saturating(value, 1_000_000);
+    return { value * 1_000_000 };
 }
 
 fn ulong as_us(Duration duration) {
@@ -151,6 +129,10 @@ fn Instant now() {
     return { (Ticks)read_micros() };
 }
 
+fn Duration since_boot() {
+    return { (ulong)now().ticks };
+}
+
 fn Duration elapsed_since(Instant start) {
     return elapsed_between(start, now());
 }
@@ -159,8 +141,13 @@ fn Duration elapsed_between(Instant start, Instant end) {
     return { (ulong)(end.ticks - start.ticks) };
 }
 
+// Deadlines are compared by the sign of the difference, so a duration of 2^63
+// or more would look like the past. Clamp: 2^62 µs is ~146,000 years.
+const ulong MAX_DEADLINE_US = (ulong)1 << 62;
+
 fn Instant deadline_after(Duration duration) {
-    return { (Ticks)(now().ticks + duration.micros) };
+    ulong micros = duration.micros > MAX_DEADLINE_US ? MAX_DEADLINE_US : duration.micros;
+    return { (Ticks)(now().ticks + micros) };
 }
 
 fn bool has_elapsed(Instant deadline) {
@@ -172,6 +159,15 @@ fn void sleep(Duration duration) {
     sleep_until(deadline_after(duration));
 }
 
+// Polls the systimer. Idling with `wfi` would need a systimer alarm
+// interrupt to wake up, which the library does not set up.
 fn void sleep_until(Instant deadline) {
-    while (!has_elapsed(deadline)) {}
+    while (!has_elapsed(deadline)) asm("nop");
+}
+
+// The systimer counts on its own, so polling it works with interrupts off.
+fn void spin(Duration duration) {
+    if (duration_is_zero(duration)) return;
+    Instant deadline = deadline_after(duration);
+    while (!has_elapsed(deadline)) asm("nop");
 }

@@ -1,0 +1,111 @@
+module embedded::spi;
+
+import embedded::gpio;
+import embedded::backends::avr::atmega328p::soc;
+
+const uint SPCR = 0x4C;
+const uint SPSR = 0x4D;
+const uint SPDR = 0x4E;
+
+// SPCR
+const char SPE  = 1 << 6;
+const char DORD = 1 << 5;
+const char MSTR = 1 << 4;
+const char CPOL = 1 << 3;
+const char CPHA = 1 << 2;
+// SPSR
+const char SPIF  = 1 << 7;
+const char SPI2X = 1 << 0;
+
+const gpio::Pin SS_PIN   = (gpio::Pin)10;
+const gpio::Pin MOSI_PIN = (gpio::Pin)11;
+const gpio::Pin MISO_PIN = (gpio::Pin)12;
+const gpio::Pin SCK_PIN  = (gpio::Pin)13;
+
+struct Bus {
+    char spcr;
+}
+
+fn Bus? open(Config config = {}) => open_pins(SCK_PIN, MOSI_PIN, MISO_PIN, config);
+
+fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config = {}) {
+    if (sck != SCK_PIN || mosi != MOSI_PIN || miso != MISO_PIN) return INVALID_PINS~;
+    uint hz = config.frequency_hz == 0 ? DEFAULT_HZ : config.frequency_hz;
+
+    // Dividers 2, 4, ..., 128: take the smallest whose rate is not above hz.
+    uint divider = 2;
+    while (divider < 128 && soc::CPU_HZ / divider > hz) divider *= 2;
+    if (soc::CPU_HZ / divider > hz) return UNSUPPORTED_FREQUENCY~;
+    // SPR1:0 select /4, /16, /64, /128; SPI2X halves the first three.
+    char spr;
+    bool double_speed;
+    switch (divider) {
+        case 2:   spr = 0; double_speed = true;
+        case 4:   spr = 0; double_speed = false;
+        case 8:   spr = 1; double_speed = true;
+        case 16:  spr = 1; double_speed = false;
+        case 32:  spr = 2; double_speed = true;
+        case 64:  spr = 2; double_speed = false;
+        default:  spr = 3; double_speed = false;
+    }
+
+    char spcr = SPE | MSTR | spr;
+    if (config.bit_order == BitOrder.LSB_FIRST) spcr |= DORD;
+    switch (config.mode) {
+        case Mode.MODE0: break;
+        case Mode.MODE1: spcr |= CPHA;
+        case Mode.MODE2: spcr |= CPOL;
+        case Mode.MODE3: spcr |= CPOL | CPHA;
+        default: return UNSUPPORTED_MODE~;
+    }
+
+    // SS high and output first, so the unit cannot drop to slave mode.
+    gpio::configure(SS_PIN, gpio::CONFIG_OUTPUT_HIGH)!;
+    gpio::configure(SCK_PIN, (spcr & CPOL) ? gpio::CONFIG_OUTPUT_HIGH : gpio::CONFIG_OUTPUT_LOW)!;
+    gpio::configure(MOSI_PIN, gpio::CONFIG_OUTPUT_LOW)!;
+    gpio::configure(MISO_PIN, gpio::CONFIG_INPUT)!;
+    soc::write8(SPSR, double_speed ? SPI2X : 0);
+    soc::write8(SPCR, spcr);
+    return { spcr };
+}
+
+fn void Bus.close(self) {
+    soc::write8(SPCR, 0);
+    (void)gpio::reset(SCK_PIN);
+    (void)gpio::reset(MOSI_PIN);
+}
+
+fn uint Bus.frequency(self) {
+    uint divider;
+    switch (self.spcr & 0x03) {
+        case 0: divider = 4;
+        case 1: divider = 16;
+        case 2: divider = 64;
+        default: divider = 128;
+    }
+    if ((soc::read8(SPSR) & SPI2X) != 0 && divider != 128) divider /= 2;
+    return soc::CPU_HZ / divider;
+}
+
+fn char Bus.transfer_byte(self, char byte) {
+    soc::write8(SPDR, byte);
+    while ((soc::read8(SPSR) & SPIF) == 0) {}
+    return soc::read8(SPDR);
+}
+
+fn void? Bus.transfer(self, char[] tx, char[] rx) {
+    if (tx.len > 0 && rx.len > 0 && tx.len != rx.len) return INVALID_LENGTH~;
+    usz len = tx.len > 0 ? tx.len : rx.len;
+    for (usz i = 0; i < len; i++) {
+        char received = self.transfer_byte(tx.len > 0 ? tx[i] : 0xFF);
+        if (rx.len > 0) rx[i] = received;
+    }
+}
+
+fn void Bus.write(self, char[] data) {
+    foreach (byte : data) (void)self.transfer_byte(byte);
+}
+
+fn void Bus.read(self, char[] buffer, char fill = 0xFF) {
+    foreach (&byte : buffer) *byte = self.transfer_byte(fill);
+}

@@ -1,0 +1,72 @@
+module embedded::spi;
+
+import embedded::gpio;
+
+// SPI bus master (blocking, full duplex).
+//
+//     spi::Bus bus = spi::open({ .frequency_hz = 4_000_000, .mode = MODE0 })!;
+//     gpio::Output cs = gpio::output(board::SPI_SS, HIGH)!;
+//     cs.clear();
+//     char id = bus.transfer_byte(0x9F);
+//     cs.set();
+//
+// Chip select is not driven by the library: use any GPIO as shown above, so
+// several devices can share the bus.
+//
+// The clock is rounded down to the nearest frequency the hardware can make,
+// never above the request; `frequency()` reports it.
+//
+// Per backend:
+//   ATmega328P: SCK D13, MOSI D11, MISO D12; 125 kHz .. 8 MHz in powers of
+//               two. D10 (SS) is made an output driven high, because the SPI
+//               unit falls back to slave mode if SS is an input that goes low.
+//               Use it as a chip select.
+//   ESP32-C3:   SPI2 on any three GPIOs (default board::SPI_SCK/MOSI/MISO),
+//               ~40 kHz .. 40 MHz from the 40 MHz crystal. Transfers are
+//               split into 64-byte hardware transactions.
+
+faultdef INVALID_PINS,
+    UNSUPPORTED_FREQUENCY,
+    UNSUPPORTED_MODE,
+    INVALID_LENGTH;
+
+constdef Mode : inline char {
+    MODE0, // clock idle low, sample on rising edge
+    MODE1, // clock idle low, sample on falling edge
+    MODE2, // clock idle high, sample on falling edge
+    MODE3, // clock idle high, sample on rising edge
+}
+
+constdef BitOrder : inline char {
+    MSB_FIRST,
+    LSB_FIRST,
+}
+
+const uint DEFAULT_HZ = 1_000_000;
+
+struct Config {
+    uint frequency_hz; // 0 selects DEFAULT_HZ
+    Mode mode;
+    BitOrder bit_order;
+    // Explicit padding: c3c 0.8.6 sizes this struct differently from LLVM on
+    // AVR without it and aborts with an internal assertion.
+    ushort reserved;
+}
+
+// Opens the bus on the board's default pins.
+fn Bus? open(Config config = {});
+
+// The ATmega328P only accepts its fixed pins and returns INVALID_PINS
+// otherwise.
+fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config = {});
+
+// Every backend defines the `Bus` handle with these methods:
+//
+//     fn char Bus.transfer_byte(self, char byte);
+//     // Sends `tx` while receiving into `rx`. Either may be empty; if both are
+//     // given they must have the same length (INVALID_LENGTH).
+//     fn void? Bus.transfer(self, char[] tx, char[] rx);
+//     fn void Bus.write(self, char[] data);              // received bytes are dropped
+//     fn void Bus.read(self, char[] buffer, char fill = 0xFF);
+//     fn uint Bus.frequency(self);
+//     fn void Bus.close(self);

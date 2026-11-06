@@ -19,6 +19,10 @@ struct ClockInfo {
 
 fn ClockInfo clock_info();
 
+// Durations are 64-bit microsecond counts and saturate instead of wrapping.
+// On the ATmega328P `ms()` and `seconds()` are a 64-bit multiply (a few
+// hundred cycles) and `as_ms()` a 64-bit division: cheap enough for setup and
+// main loops, but compute them once, outside bit-banging or ISR code.
 fn Duration us(ulong value);
 fn Duration ms(ulong value);
 fn Duration seconds(ulong value);
@@ -31,11 +35,27 @@ fn Duration duration_sub_saturating(Duration lhs, Duration rhs);
 fn bool duration_is_zero(Duration duration);
 
 fn Instant now();
+
+// Time since the clock started counting. On the ATmega328P that is the
+// start-up code, just before `start()`. On the ESP32-C3 it is chip reset, so
+// the value includes the time the ROM loader took.
+fn Duration since_boot();
+
 fn Duration elapsed_since(Instant start);
 fn Duration elapsed_between(Instant start, Instant end);
 
 fn Instant deadline_after(Duration duration);
 fn bool has_elapsed(Instant deadline);
 
+// Waits at least `duration`. May idle the core between clock interrupts to
+// save power (the ATmega328P enters idle mode while the deadline is more than
+// ~2 ms away), so other interrupts keep running and wake it early.
+// Does not feed the watchdog.
 fn void sleep(Duration duration);
 fn void sleep_until(Instant deadline);
+
+// Busy-waits at least `duration` without relying on interrupts, so it also
+// works inside `irq::@critical` and in interrupt handlers. Use it for short
+// protocol delays. The ATmega328P counts CPU cycles (at least, and accurate
+// to within about 1 µs plus interrupt time); the ESP32-C3 polls the systimer.
+fn void spin(Duration duration);
