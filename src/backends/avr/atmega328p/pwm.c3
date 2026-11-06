@@ -3,36 +3,21 @@ module embedded::pwm;
 import embedded::gpio;
 import embedded::irq;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
 // Timer 0 (shared with embedded::time, fast PWM, TOP 255, /64):
 //   D6 = OC0A, D5 = OC0B
-const uint TCCR0A = 0x44;
-const uint OCR0A  = 0x47;
-const uint OCR0B  = 0x48;
 // Timer 1 (fast PWM mode 14, TOP = ICR1):
 //   D9 = OC1A, D10 = OC1B
-const uint TCCR1A = 0x80;
-const uint TCCR1B = 0x81;
-const uint ICR1   = 0x86;
-const uint OCR1A  = 0x88;
-const uint OCR1B  = 0x8A;
 // Timer 2 (fast PWM mode 3, TOP 255):
 //   D11 = OC2A, D3 = OC2B
-const uint TCCR2A = 0xB0;
-const uint TCCR2B = 0xB1;
-const uint OCR2A  = 0xB3;
-const uint OCR2B  = 0xB4;
 
 // TCCRnA output-compare modes: COMnx1 set, COMnx0 clear = non-inverting.
-const char COM_A_NONINVERTING = 1 << 7;
-const char COM_B_NONINVERTING = 1 << 5;
-const char COM_A_MASK = 0xC0;
-const char COM_B_MASK = 0x30;
+const char COM_A_NONINVERTING = regs::COM_A1;
+const char COM_B_NONINVERTING = regs::COM_B1;
 // Waveform generation.
-const char TCCR1A_WGM11 = 1 << 1;
-const char TCCR1B_WGM13_WGM12 = (1 << 4) | (1 << 3);
-const char TCCR2A_FAST_PWM = 0x03;
-const char CS_MASK = 0x07;
+const char TCCR1B_WGM13_WGM12 = regs::WGM13 | regs::WGM12;
+const char TCCR2A_FAST_PWM = regs::WGM21 | regs::WGM20;
 
 const uint TIMER0_HZ = soc::CPU_HZ / 64 / 256;
 const uint DEFAULT_TIMER1_HZ = 1000;
@@ -68,9 +53,9 @@ fn char timer_of(char pin) @local {
 
 fn uint tccra_of(char pin) @local {
     switch (timer_of(pin)) {
-        case 0: return TCCR0A;
-        case 1: return TCCR1A;
-        default: return TCCR2A;
+        case 0: return regs::TCCR0A;
+        case 1: return regs::TCCR1A;
+        default: return regs::TCCR2A;
     }
 }
 
@@ -78,16 +63,16 @@ fn uint tccra_of(char pin) @local {
 fn bool is_channel_a(char pin) @local => pin == 6 || pin == 9 || pin == 11;
 
 fn char com_bits(char pin) @local => is_channel_a(pin) ? COM_A_NONINVERTING : COM_B_NONINVERTING;
-fn char com_mask(char pin) @local => is_channel_a(pin) ? COM_A_MASK : COM_B_MASK;
+fn char com_mask(char pin) @local => is_channel_a(pin) ? regs::COM_A_MASK : regs::COM_B_MASK;
 
 fn uint ocr_of(char pin) @local {
     switch (pin) {
-        case 6: return OCR0A;
-        case 5: return OCR0B;
-        case 9: return OCR1A;
-        case 10: return OCR1B;
-        case 11: return OCR2A;
-        default: return OCR2B;
+        case 6: return regs::OCR0A;
+        case 5: return regs::OCR0B;
+        case 9: return regs::OCR1A;
+        case 10: return regs::OCR1B;
+        case 11: return regs::OCR2A;
+        default: return regs::OCR2B;
     }
 }
 
@@ -120,7 +105,7 @@ fn bool within_factor_two(uint actual, uint wanted) @local {
 
 fn ushort timer1_top() @local {
     irq::State state = irq::save_and_disable();
-    ushort top = soc::read16(ICR1);
+    ushort top = soc::read16(regs::ICR1);
     irq::restore(state);
     return top;
 }
@@ -143,20 +128,20 @@ fn uint? timer1_set_frequency(uint hz) @local {
 
     irq::State state = irq::save_and_disable();
     defer irq::restore(state);
-    bool running = (soc::read8(TCCR1B) & CS_MASK) != 0;
-    uint old_top = running ? soc::read16(ICR1) : 0;
-    uint ocr_a = running ? soc::read16(OCR1A) : 0;
-    uint ocr_b = running ? soc::read16(OCR1B) : 0;
+    bool running = (soc::read8(regs::TCCR1B) & regs::CS_MASK) != 0;
+    uint old_top = running ? soc::read16(regs::ICR1) : 0;
+    uint ocr_a = running ? soc::read16(regs::OCR1A) : 0;
+    uint ocr_b = running ? soc::read16(regs::OCR1B) : 0;
 
-    soc::write8(TCCR1B, 0); // stop while reconfiguring
-    soc::write8(TCCR1A, (soc::read8(TCCR1A) & (COM_A_MASK | COM_B_MASK)) | TCCR1A_WGM11);
-    soc::write16(ICR1, (ushort)top);
+    soc::write8(regs::TCCR1B, 0); // stop while reconfiguring
+    soc::write8(regs::TCCR1A, (soc::read8(regs::TCCR1A) & (regs::COM_A_MASK | regs::COM_B_MASK)) | regs::WGM11);
+    soc::write16(regs::ICR1, (ushort)top);
     if (old_top != 0) {
-        soc::write16(OCR1A, (ushort)(ocr_a * top / old_top));
-        soc::write16(OCR1B, (ushort)(ocr_b * top / old_top));
+        soc::write16(regs::OCR1A, (ushort)(ocr_a * top / old_top));
+        soc::write16(regs::OCR1B, (ushort)(ocr_b * top / old_top));
     }
-    soc::write16(0x84, 0); // TCNT1
-    soc::write8(TCCR1B, TCCR1B_WGM13_WGM12 | cs);
+    soc::write16(regs::TCNT1, 0);
+    soc::write8(regs::TCCR1B, TCCR1B_WGM13_WGM12 | cs);
     return soc::CPU_HZ / timer1_divider(cs) / (top + 1);
 }
 
@@ -175,8 +160,8 @@ fn uint? timer2_set_frequency(uint hz) @local {
     }
     uint actual = soc::CPU_HZ / timer2_divider(best) / 256;
     if (!within_factor_two(actual, hz)) return UNSUPPORTED_FREQUENCY~;
-    soc::write8(TCCR2A, (soc::read8(TCCR2A) & (COM_A_MASK | COM_B_MASK)) | TCCR2A_FAST_PWM);
-    soc::write8(TCCR2B, best);
+    soc::write8(regs::TCCR2A, (soc::read8(regs::TCCR2A) & (regs::COM_A_MASK | regs::COM_B_MASK)) | TCCR2A_FAST_PWM);
+    soc::write8(regs::TCCR2B, best);
     return actual;
 }
 
@@ -189,19 +174,19 @@ fn Channel? open(gpio::Pin pin, Config config = {}) {
                 return UNSUPPORTED_FREQUENCY~;
             }
         case 1:
-            bool running = (soc::read8(TCCR1B) & CS_MASK) != 0;
+            bool running = (soc::read8(regs::TCCR1B) & regs::CS_MASK) != 0;
             if (config.frequency_hz != 0) {
                 timer1_set_frequency(config.frequency_hz)!;
             } else if (!running) {
                 timer1_set_frequency(DEFAULT_TIMER1_HZ)!;
             }
         default:
-            bool running = (soc::read8(TCCR2B) & CS_MASK) != 0;
+            bool running = (soc::read8(regs::TCCR2B) & regs::CS_MASK) != 0;
             if (config.frequency_hz != 0) {
                 timer2_set_frequency(config.frequency_hz)!;
             } else if (!running) {
-                soc::write8(TCCR2A, (soc::read8(TCCR2A) & (COM_A_MASK | COM_B_MASK)) | TCCR2A_FAST_PWM);
-                soc::write8(TCCR2B, DEFAULT_TIMER2_CS);
+                soc::write8(regs::TCCR2A, (soc::read8(regs::TCCR2A) & (regs::COM_A_MASK | regs::COM_B_MASK)) | TCCR2A_FAST_PWM);
+                soc::write8(regs::TCCR2B, DEFAULT_TIMER2_CS);
             }
     }
     // The compare unit only drives the pin while it is an output.
@@ -236,11 +221,11 @@ fn uint Channel.frequency(self) {
     switch (timer_of(self.pin)) {
         case 0: return TIMER0_HZ;
         case 1:
-            char cs = soc::read8(TCCR1B) & CS_MASK;
+            char cs = soc::read8(regs::TCCR1B) & regs::CS_MASK;
             if (cs == 0) return 0;
             return soc::CPU_HZ / timer1_divider(cs) / ((uint)timer1_top() + 1);
         default:
-            char cs = soc::read8(TCCR2B) & CS_MASK;
+            char cs = soc::read8(regs::TCCR2B) & regs::CS_MASK;
             if (cs == 0) return 0;
             return soc::CPU_HZ / timer2_divider(cs) / 256;
     }

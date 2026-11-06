@@ -3,6 +3,7 @@ module embedded::uart;
 import embedded::gpio;
 import embedded::irq;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
 // USART0, the ATmega328P's only UART: TX on PD1 (D1), RX on PD0 (D0).
 // Enabling the transmitter and receiver takes the pins over from GPIO.
@@ -10,29 +11,7 @@ constdef Port : inline char {
     UART0 = 0,
 }
 
-const uint UCSR0A = 0xC0;
-const uint UCSR0B = 0xC1;
-const uint UCSR0C = 0xC2;
-const uint UBRR0L = 0xC4;
-const uint UBRR0H = 0xC5;
-const uint UDR0   = 0xC6;
 
-// UCSR0A
-const char RXC0  = 1 << 7;
-const char TXC0  = 1 << 6;
-const char UDRE0 = 1 << 5;
-const char FE0   = 1 << 4;
-const char DOR0  = 1 << 3;
-const char UPE0  = 1 << 2;
-const char U2X0  = 1 << 1;
-// UCSR0B
-const char RXEN0 = 1 << 4;
-const char TXEN0 = 1 << 3;
-// UCSR0C
-const char UPM01 = 1 << 5;
-const char UPM00 = 1 << 4;
-const char USBS0 = 1 << 3;
-const char UCSZ_SHIFT = 1;
 
 const gpio::Pin TX_PIN = (gpio::Pin)1;
 const gpio::Pin RX_PIN = (gpio::Pin)0;
@@ -86,43 +65,43 @@ fn Uart? open_pins(Port port, gpio::Pin tx, gpio::Pin rx, Config config = {}) {
 
     // UCSZ0[1:0] is 3 for 8 data bits down to 0 for 5.
     if ((char)config.data_bits > 3) return UNSUPPORTED_FORMAT~;
-    char frame = (char)((3 - (char)config.data_bits) << UCSZ_SHIFT);
+    char frame = (char)((3 - (char)config.data_bits) << regs::UCSZ0_SHIFT);
     switch (config.parity) {
         case Parity.NONE: break;
-        case Parity.EVEN: frame |= UPM01;
-        case Parity.ODD:  frame |= UPM01 | UPM00;
+        case Parity.EVEN: frame |= regs::UPM01;
+        case Parity.ODD:  frame |= regs::UPM01 | regs::UPM00;
         default: return UNSUPPORTED_FORMAT~;
     }
-    if (config.stop_bits == StopBits.TWO) frame |= USBS0;
+    if (config.stop_bits == StopBits.TWO) frame |= regs::USBS0;
 
-    soc::write8(UCSR0B, 0);
-    soc::write8(UCSR0A, double_speed ? U2X0 : 0);
-    soc::write8(UBRR0H, (char)(ubrr >> 8));
-    soc::write8(UBRR0L, (char)ubrr);
-    soc::write8(UCSR0C, frame);
-    soc::write8(UCSR0B, RXEN0 | TXEN0);
+    soc::write8(regs::UCSR0B, 0);
+    soc::write8(regs::UCSR0A, double_speed ? regs::U2X0 : 0);
+    soc::write8(regs::UBRR0H, (char)(ubrr >> 8));
+    soc::write8(regs::UBRR0L, (char)ubrr);
+    soc::write8(regs::UCSR0C, frame);
+    soc::write8(regs::UCSR0B, regs::RXEN0 | regs::TXEN0);
     tx_pending = false;
     return { port };
 }
 
 fn void Uart.close(self) {
     self.flush();
-    soc::write8(UCSR0B, 0);
+    soc::write8(regs::UCSR0B, 0);
 }
 
 fn uint Uart.baud(self) {
-    uint ubrr = (uint)(soc::read8(UBRR0H) & 0x0F) << 8 | soc::read8(UBRR0L);
-    return rate_for(ubrr, (soc::read8(UCSR0A) & U2X0) != 0);
+    uint ubrr = (uint)(soc::read8(regs::UBRR0H) & regs::UBRR0H_MASK) << 8 | soc::read8(regs::UBRR0L);
+    return rate_for(ubrr, (soc::read8(regs::UCSR0A) & regs::U2X0) != 0);
 }
 
 fn void Uart.write_byte(self, char byte) {
-    while ((soc::read8(UCSR0A) & UDRE0) == 0) {}
+    while ((soc::read8(regs::UCSR0A) & regs::UDRE0) == 0) {}
     // Queue the byte, then clear TXC0 (write one, keep U2X0, error flags
     // written as zero). In this order, and with interrupts off, a TXC0 left
     // over from the previous byte cannot make `flush()` return early.
     irq::@critical() {
-        soc::write8(UDR0, byte);
-        soc::write8(UCSR0A, (soc::read8(UCSR0A) & U2X0) | TXC0);
+        soc::write8(regs::UDR0, byte);
+        soc::write8(regs::UCSR0A, (soc::read8(regs::UCSR0A) & regs::U2X0) | regs::TXC0);
         tx_pending = true;
     };
 }
@@ -133,20 +112,20 @@ fn void Uart.write(self, char[] bytes) {
 
 fn void Uart.flush(self) {
     if (!tx_pending) return;
-    while ((soc::read8(UCSR0A) & TXC0) == 0) {}
+    while ((soc::read8(regs::UCSR0A) & regs::TXC0) == 0) {}
     tx_pending = false;
 }
 
-fn bool Uart.can_read(self) => (soc::read8(UCSR0A) & RXC0) != 0;
+fn bool Uart.can_read(self) => (soc::read8(regs::UCSR0A) & regs::RXC0) != 0;
 
 fn char? Uart.try_read(self) {
-    char status = soc::read8(UCSR0A);
-    if ((status & RXC0) == 0) return NO_DATA~;
+    char status = soc::read8(regs::UCSR0A);
+    if ((status & regs::RXC0) == 0) return NO_DATA~;
     // The error flags belong to the byte at the head of the FIFO, so they
     // must be read before UDR0.
-    char byte = soc::read8(UDR0);
-    if (status & FE0) return FRAMING_ERROR~;
-    if (status & DOR0) return OVERRUN~;
-    if (status & UPE0) return PARITY_ERROR~;
+    char byte = soc::read8(regs::UDR0);
+    if (status & regs::FE0) return FRAMING_ERROR~;
+    if (status & regs::DOR0) return OVERRUN~;
+    if (status & regs::UPE0) return PARITY_ERROR~;
     return byte;
 }

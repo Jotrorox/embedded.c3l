@@ -5,11 +5,8 @@ import embedded::wdt;
 extern fn void start();
 extern fn void embedded_avr_time_init();
 
-extern char _sdata;
-extern char _edata;
 extern char _sbss;
 extern char _ebss;
-extern char _etext;
 
 // Called for an interrupt that is enabled but has no handler. Weak, so the
 // firmware can replace it (for example to blink an error code).
@@ -107,17 +104,22 @@ fn void abort() @export("abort") @noreturn {
     asm("rjmp .-2");
 }
 
+// Reset entry. Pure asm, because nothing compiler-generated may run before
+// the stack pointer is set: it sets SP to RAMEND, clears SREG and the zero
+// register r1, copies .data (and .rodata) from flash with `lpm`, which C3
+// cannot express, then continues in `boot()`.
 fn void __init() @naked @noreturn @export("__init") @section(".init") {
-    asm("ldi r28, 0xFF");
-    asm("out 0x3d, r28");
-    asm("ldi r29, 0x08");
-    asm("out 0x3e, r29");
     asm("eor r1, r1");
+    asm("out 0x3f, r1");                 // SREG
+    asm("ldi r28, lo8(__stack_top)");
+    asm("ldi r29, hi8(__stack_top)");
+    asm("out 0x3e, r29");                // SPH
+    asm("out 0x3d, r28");                // SPL
 
     asm("ldi r26, lo8(_sdata)");
     asm("ldi r27, hi8(_sdata)");
-    asm("ldi r30, lo8(_etext)");
-    asm("ldi r31, hi8(_etext)");
+    asm("ldi r30, lo8(_sidata)");
+    asm("ldi r31, hi8(_sidata)");
     asm("ldi r25, hi8(_edata)");
     asm("rjmp 2f");
     asm("1:");
@@ -129,15 +131,22 @@ fn void __init() @naked @noreturn @export("__init") @section(".init") {
     asm("cpc r27, r25");
     asm("brne 1b");
 
-    char* bss = &_sbss;
-    char* bend = &_ebss;
-    while (bss < bend) {
-        *bss = 0;
-        bss++;
-    }
+    asm("rjmp embedded_avr_start");
+}
+
+// Called once after the library is initialised and interrupts are on, just
+// before `start()`. Weak: define `fn void ...() @export("embedded_on_boot")`
+// for board bring-up such as enabling a power rail or setting up a console.
+fn void on_boot() @weak @export("embedded_on_boot") {
+}
+
+// Ordinary C3 from here on. Kept in .init so the `rjmp` above reaches it.
+fn void boot() @noreturn @export("embedded_avr_start") @section(".init.boot") {
+    for (char* p = &_sbss; p < &_ebss; p++) @volatile_store(*p, 0);
 
     wdt::boot();
     embedded_avr_time_init();
+    on_boot();
     start();
     abort();
 }

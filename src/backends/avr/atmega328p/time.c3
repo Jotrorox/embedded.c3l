@@ -2,23 +2,15 @@ module embedded::time;
 
 import embedded::irq;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
 // Timer 0 runs in fast PWM mode with a /64 prescaler: one count every 4 µs at
 // 16 MHz and an overflow every 1024 µs. The overflow interrupt extends the
 // 8-bit counter in software. The same timer drives PWM on D5/D6, which is why
 // `embedded::pwm` cannot change their frequency.
-const uint TCCR0A = 0x44;
-const uint TCCR0B = 0x45;
-const uint TCNT0  = 0x46;
-const uint TIMSK0 = 0x6E;
-const uint TIFR0  = 0x35;
-const uint SMCR   = 0x53;
 
-const char WGM01_WGM00 = 0x03;
-const char CS00_CS01   = 0x03;
-const char TOIE0_BIT   = 0x01;
-const char TOV0_BIT    = 0x01;
-const char SMCR_SE     = 0x01; // sleep enable; SM2..0 = 000 selects idle mode
+const char WGM01_WGM00 = regs::WGM01 | regs::WGM00; // fast PWM, TOP 0xFF
+const char CS00_CS01   = regs::CS01 | regs::CS00;   // clk/64
 
 const ulong ULONG_MAX_VALUE = 0xFFFF_FFFF_FFFF_FFFF;
 const ulong MAX_MS_VALUE = ULONG_MAX_VALUE / 1000;
@@ -39,9 +31,9 @@ bool timer0_time_active = false;
 fn void embedded_avr_time_init() @export("embedded_avr_time_init") {
     if (timer0_time_active) return;
 
-    soc::set8(TCCR0A, WGM01_WGM00);
-    soc::write8(TCCR0B, (soc::read8(TCCR0B) & (char)0xF8) | CS00_CS01);
-    soc::set8(TIMSK0, TOIE0_BIT);
+    soc::set8(regs::TCCR0A, WGM01_WGM00);
+    soc::write8(regs::TCCR0B, (soc::read8(regs::TCCR0B) & (char)~regs::CS_MASK) | CS00_CS01);
+    soc::set8(regs::TIMSK0, regs::TOIE0);
     timer0_time_active = true;
     irq::enable();
 }
@@ -68,8 +60,8 @@ fn ulong read_micros() {
 
     irq::State state = irq::save_and_disable();
     uint m = @volatile_load(timer0_overflow_count);
-    char t = soc::read8(TCNT0);
-    if ((soc::read8(TIFR0) & TOV0_BIT) != 0 && t < 255) {
+    char t = soc::read8(regs::TCNT0);
+    if ((soc::read8(regs::TIFR0) & regs::TOV0) != 0 && t < 255) {
         m++;
     }
     irq::restore(state);
@@ -164,9 +156,9 @@ fn void sleep_until(Instant deadline) {
         // stops advancing after one missed overflow), so only idle when they
         // are on. Any interrupt ends the idle period early, which is harmless.
         if (remaining > IDLE_THRESHOLD_US && irq::is_enabled()) {
-            soc::write8(SMCR, SMCR_SE);
+            soc::write8(regs::SMCR, regs::SMCR_SE);
             asm("sleep");
-            soc::write8(SMCR, 0);
+            soc::write8(regs::SMCR, 0);
         }
     }
 }

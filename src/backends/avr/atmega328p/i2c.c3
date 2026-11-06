@@ -3,32 +3,11 @@ module embedded::i2c;
 import embedded::gpio;
 import embedded::time;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
 // TWI: SDA on PC4 (A4), SCL on PC5 (A5).
-const uint TWBR = 0xB8;
-const uint TWSR = 0xB9;
-const uint TWDR = 0xBB;
-const uint TWCR = 0xBC;
 
-const char TWINT = 1 << 7;
-const char TWEA  = 1 << 6;
-const char TWSTA = 1 << 5;
-const char TWSTO = 1 << 4;
-const char TWEN  = 1 << 2;
 
-// TWSR status codes (prescaler bits masked off).
-const char STATUS_MASK         = 0xF8;
-const char STATUS_START        = 0x08;
-const char STATUS_REP_START    = 0x10;
-const char STATUS_SLA_W_ACK    = 0x18;
-const char STATUS_SLA_W_NACK   = 0x20;
-const char STATUS_DATA_W_ACK   = 0x28;
-const char STATUS_DATA_W_NACK  = 0x30;
-const char STATUS_ARB_LOST     = 0x38;
-const char STATUS_SLA_R_ACK    = 0x40;
-const char STATUS_SLA_R_NACK   = 0x48;
-const char STATUS_DATA_R_ACK   = 0x50;
-const char STATUS_DATA_R_NACK  = 0x58;
 
 const gpio::Pin SDA_PIN = (gpio::Pin)18;
 const gpio::Pin SCL_PIN = (gpio::Pin)19;
@@ -61,64 +40,64 @@ fn Bus? open_pins(gpio::Pin sda, gpio::Pin scl, Config config = {}) {
     // Internal pull-ups, as the Arduino Wire library does.
     gpio::configure(sda, gpio::CONFIG_INPUT_PULLUP)!;
     gpio::configure(scl, gpio::CONFIG_INPUT_PULLUP)!;
-    soc::write8(TWSR, twps);
-    soc::write8(TWBR, (char)twbr);
-    soc::write8(TWCR, TWEN);
+    soc::write8(regs::TWSR, twps);
+    soc::write8(regs::TWBR, (char)twbr);
+    soc::write8(regs::TWCR, regs::TWEN);
     return { config.timeout_us == 0 ? DEFAULT_TIMEOUT_US : config.timeout_us };
 }
 
 fn void Bus.close(self) {
-    soc::write8(TWCR, 0);
+    soc::write8(regs::TWCR, 0);
     (void)gpio::reset(SDA_PIN);
     (void)gpio::reset(SCL_PIN);
 }
 
 fn uint Bus.frequency(self) {
     uint scale = 1;
-    for (char twps = soc::read8(TWSR) & 0x03; twps > 0; twps--) scale *= 4;
-    return soc::CPU_HZ / (16 + 2 * (uint)soc::read8(TWBR) * scale);
+    for (char twps = soc::read8(regs::TWSR) & regs::TWPS_MASK; twps > 0; twps--) scale *= 4;
+    return soc::CPU_HZ / (16 + 2 * (uint)soc::read8(regs::TWBR) * scale);
 }
 
 // Starts a TWI action and waits for it; returns the status code.
 fn char? step(char control, time::Instant deadline) @local {
-    soc::write8(TWCR, control | TWINT | TWEN);
-    while ((soc::read8(TWCR) & TWINT) == 0) {
+    soc::write8(regs::TWCR, control | regs::TWINT | regs::TWEN);
+    while ((soc::read8(regs::TWCR) & regs::TWINT) == 0) {
         if (time::has_elapsed(deadline)) {
             // Disabling the unit releases both lines and resets its state.
-            soc::write8(TWCR, 0);
-            soc::write8(TWCR, TWEN);
+            soc::write8(regs::TWCR, 0);
+            soc::write8(regs::TWCR, regs::TWEN);
             return TIMEOUT~;
         }
     }
-    return soc::read8(TWSR) & STATUS_MASK;
+    return soc::read8(regs::TWSR) & regs::TW_STATUS_MASK;
 }
 
 fn void stop(time::Instant deadline) @local {
-    soc::write8(TWCR, TWINT | TWEN | TWSTO);
+    soc::write8(regs::TWCR, regs::TWINT | regs::TWEN | regs::TWSTO);
     // TWSTO clears once the STOP condition is on the bus.
-    while ((soc::read8(TWCR) & TWSTO) != 0) {
+    while ((soc::read8(regs::TWCR) & regs::TWSTO) != 0) {
         if (time::has_elapsed(deadline)) {
-            soc::write8(TWCR, 0);
-            soc::write8(TWCR, TWEN);
+            soc::write8(regs::TWCR, 0);
+            soc::write8(regs::TWCR, regs::TWEN);
             return;
         }
     }
 }
 
 fn void? start_and_address(char address, bool read, time::Instant deadline) @local {
-    char status = step(TWSTA, deadline)!;
-    if (status == STATUS_ARB_LOST) return ARBITRATION_LOST~;
-    if (status != STATUS_START && status != STATUS_REP_START) return BUS_ERROR~;
-    soc::write8(TWDR, (char)(address << 1) | (read ? 1 : 0));
+    char status = step(regs::TWSTA, deadline)!;
+    if (status == regs::TW_ARB_LOST) return ARBITRATION_LOST~;
+    if (status != regs::TW_START && status != regs::TW_REP_START) return BUS_ERROR~;
+    soc::write8(regs::TWDR, (char)(address << 1) | (read ? 1 : 0));
     status = step(0, deadline)!;
     switch (status) {
-        case STATUS_SLA_W_ACK:
-        case STATUS_SLA_R_ACK:
+        case regs::TW_MT_SLA_ACK:
+        case regs::TW_MR_SLA_ACK:
             return;
-        case STATUS_SLA_W_NACK:
-        case STATUS_SLA_R_NACK:
+        case regs::TW_MT_SLA_NACK:
+        case regs::TW_MR_SLA_NACK:
             return ADDRESS_NACK~;
-        case STATUS_ARB_LOST:
+        case regs::TW_ARB_LOST:
             return ARBITRATION_LOST~;
         default:
             return BUS_ERROR~;
@@ -130,11 +109,11 @@ fn void? transfer(char address, char[] data, char[] buffer, time::Instant deadli
     if (data.len > 0 || buffer.len == 0) {
         start_and_address(address, false, deadline)!;
         foreach (byte : data) {
-            soc::write8(TWDR, byte);
+            soc::write8(regs::TWDR, byte);
             char status = step(0, deadline)!;
-            if (status == STATUS_DATA_W_NACK) return DATA_NACK~;
-            if (status == STATUS_ARB_LOST) return ARBITRATION_LOST~;
-            if (status != STATUS_DATA_W_ACK) return BUS_ERROR~;
+            if (status == regs::TW_MT_DATA_NACK) return DATA_NACK~;
+            if (status == regs::TW_ARB_LOST) return ARBITRATION_LOST~;
+            if (status != regs::TW_MT_DATA_ACK) return BUS_ERROR~;
         }
     }
     if (buffer.len > 0) {
@@ -142,9 +121,9 @@ fn void? transfer(char address, char[] data, char[] buffer, time::Instant deadli
         foreach (i, &byte : buffer) {
             bool last = i + 1 == buffer.len;
             // ACK every byte but the last, which tells the device to stop.
-            char status = step(last ? 0 : TWEA, deadline)!;
-            if (status != (last ? STATUS_DATA_R_NACK : STATUS_DATA_R_ACK)) return BUS_ERROR~;
-            *byte = soc::read8(TWDR);
+            char status = step(last ? 0 : regs::TWEA, deadline)!;
+            if (status != (last ? regs::TW_MR_DATA_NACK : regs::TW_MR_DATA_ACK)) return BUS_ERROR~;
+            *byte = soc::read8(regs::TWDR);
         }
     }
 }

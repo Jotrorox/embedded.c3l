@@ -1,27 +1,13 @@
 module embedded::gpio;
 
-const uint GPIO_BASE = 0x6000_4000;
-const uint IO_MUX_BASE = 0x6000_9000;
+import embedded::backends::esp32::esp32c3::regs;
 
-const uint GPIO_OUT_REG = GPIO_BASE + 0x004;
-const uint GPIO_OUT_W1TS = GPIO_BASE + 0x008;
-const uint GPIO_OUT_W1TC = GPIO_BASE + 0x00C;
-const uint GPIO_ENABLE_W1TS = GPIO_BASE + 0x024;
-const uint GPIO_ENABLE_W1TC = GPIO_BASE + 0x028;
-const uint GPIO_IN_REG = GPIO_BASE + 0x03C;
+const uint IO_MUX_INPUT_VALUE = regs::IO_MUX_MCU_SEL_GPIO | regs::IO_MUX_FUN_IE;
+const uint IO_MUX_INPUT_PULLUP_VALUE = IO_MUX_INPUT_VALUE | regs::IO_MUX_FUN_WPU;
+const uint IO_MUX_INPUT_PULLDOWN_VALUE = IO_MUX_INPUT_VALUE | regs::IO_MUX_FUN_WPD;
 
-const uint GPIO_FUNC_OUT_SEL_BASE = GPIO_BASE + 0x554;
-const uint GPIO_FUNC_OUT_SEL_STRIDE = 4;
-
-const uint IO_MUX_GPIO_BASE = IO_MUX_BASE + 0x004;
-const uint IO_MUX_GPIO_STRIDE = 4;
-
-const uint IO_MUX_INPUT_VALUE = (1u << 12) | (1u << 9);
-const uint IO_MUX_INPUT_PULLUP_VALUE = (1u << 12) | (1u << 9) | (1u << 8);
-const uint IO_MUX_INPUT_PULLDOWN_VALUE = (1u << 12) | (1u << 9) | (1u << 7);
-
-const uint IO_MUX_OUTPUT_VALUE = (2u << 10) | (1u << 12);
-const uint GPIO_FUNC_OUTPUT_VALUE = 0x80u | (1u << 9);
+const uint IO_MUX_OUTPUT_VALUE = regs::IO_MUX_MCU_SEL_GPIO | regs::IO_MUX_FUN_DRV_DEFAULT;
+const uint GPIO_FUNC_OUTPUT_VALUE = regs::GPIO_OUT_SIGNAL_SIMPLE | regs::GPIO_FUNC_OUT_OEN_SEL;
 
 fn void reg_write(uint addr, uint value) {
     @volatile_store(*(uint*)addr, value);
@@ -54,11 +40,11 @@ fn uint pin_mask(Pin pin) {
 }
 
 fn uint pin_io_mux_reg(Pin pin) {
-    return IO_MUX_GPIO_BASE + (uint)pin * IO_MUX_GPIO_STRIDE;
+    return regs::IO_MUX_GPIO0 + (uint)pin * 4;
 }
 
 fn uint pin_out_sel_reg(Pin pin) {
-    return GPIO_FUNC_OUT_SEL_BASE + (uint)pin * GPIO_FUNC_OUT_SEL_STRIDE;
+    return regs::GPIO_FUNC0_OUT_SEL_CFG + (uint)pin * 4;
 }
 
 fn void? configure(Pin pin, Config config) {
@@ -72,13 +58,13 @@ fn void? configure(Pin pin, Config config) {
         case Direction.OUTPUT:
             if (config.pull != Pull.NONE) return UNSUPPORTED_PULL~;
             if (config.initial_state == PinState.HIGH) {
-                reg_write(GPIO_OUT_W1TS, pin_mask(pin));
+                reg_write(regs::GPIO_OUT_W1TS, pin_mask(pin));
             } else {
-                reg_write(GPIO_OUT_W1TC, pin_mask(pin));
+                reg_write(regs::GPIO_OUT_W1TC, pin_mask(pin));
             }
             reg_write(pin_io_mux_reg(pin), IO_MUX_OUTPUT_VALUE);
             reg_write(pin_out_sel_reg(pin), GPIO_FUNC_OUTPUT_VALUE);
-            reg_write(GPIO_ENABLE_W1TS, pin_mask(pin));
+            reg_write(regs::GPIO_ENABLE_W1TS, pin_mask(pin));
         case Direction.INPUT:
             switch (config.pull) {
                 case Pull.NONE:
@@ -90,7 +76,7 @@ fn void? configure(Pin pin, Config config) {
                 default:
                     return UNSUPPORTED_PULL~;
             }
-            reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
+            reg_write(regs::GPIO_ENABLE_W1TC, pin_mask(pin));
         default:
             return UNSUPPORTED_MODE~;
     }
@@ -99,15 +85,15 @@ fn void? configure(Pin pin, Config config) {
 fn void? write(Pin pin, PinState state) {
     if (!is_valid(pin)) return INVALID_PIN~;
     if (state == PinState.HIGH) {
-        reg_write(GPIO_OUT_W1TS, pin_mask(pin));
+        reg_write(regs::GPIO_OUT_W1TS, pin_mask(pin));
     } else {
-        reg_write(GPIO_OUT_W1TC, pin_mask(pin));
+        reg_write(regs::GPIO_OUT_W1TC, pin_mask(pin));
     }
 }
 
 fn PinState? read(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
-    return (reg_read(GPIO_IN_REG) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
+    return (reg_read(regs::GPIO_IN) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn void? toggle(Pin pin) {
@@ -117,14 +103,14 @@ fn void? toggle(Pin pin) {
 
 fn PinState? read_output(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
-    return (reg_read(GPIO_OUT_REG) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
+    return (reg_read(regs::GPIO_OUT) & pin_mask(pin)) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn void? reset(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
-    reg_write(GPIO_OUT_W1TC, pin_mask(pin));
+    reg_write(regs::GPIO_OUT_W1TC, pin_mask(pin));
     reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_VALUE);
-    reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
+    reg_write(regs::GPIO_ENABLE_W1TC, pin_mask(pin));
 }
 
 // Handles. GPIO0..21 all live in the single 32-bit GPIO_OUT / GPIO_IN bank and
@@ -148,27 +134,27 @@ fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
 }
 
 fn void Output.set(self) @inline {
-    reg_write(GPIO_OUT_W1TS, self.mask);
+    reg_write(regs::GPIO_OUT_W1TS, self.mask);
 }
 
 fn void Output.clear(self) @inline {
-    reg_write(GPIO_OUT_W1TC, self.mask);
+    reg_write(regs::GPIO_OUT_W1TC, self.mask);
 }
 
 fn void Output.toggle(self) @inline {
-    reg_write((reg_read(GPIO_OUT_REG) & self.mask) != 0 ? GPIO_OUT_W1TC : GPIO_OUT_W1TS, self.mask);
+    reg_write((reg_read(regs::GPIO_OUT) & self.mask) != 0 ? regs::GPIO_OUT_W1TC : regs::GPIO_OUT_W1TS, self.mask);
 }
 
 fn void Output.write(self, PinState state) @inline {
-    reg_write(state != PinState.LOW ? GPIO_OUT_W1TS : GPIO_OUT_W1TC, self.mask);
+    reg_write(state != PinState.LOW ? regs::GPIO_OUT_W1TS : regs::GPIO_OUT_W1TC, self.mask);
 }
 
 fn PinState Output.read(self) @inline {
-    return (reg_read(GPIO_OUT_REG) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+    return (reg_read(regs::GPIO_OUT) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn PinState Input.read(self) @inline {
-    return (reg_read(GPIO_IN_REG) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+    return (reg_read(regs::GPIO_IN) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn bool Input.is_high(self) @inline => self.read() == PinState.HIGH;

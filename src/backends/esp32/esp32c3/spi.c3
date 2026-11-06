@@ -3,52 +3,16 @@ module embedded::spi;
 import embedded::gpio;
 import embedded::board;
 import embedded::backends::esp32::esp32c3::soc;
+import embedded::backends::esp32::esp32c3::regs;
 
 // GP-SPI2 as a CPU-driven full-duplex master: up to 64 bytes per hardware
-// transaction through the W0..W15 data buffer. Configuration registers are
-// copied into the SPI clock domain by CMD.UPDATE. Follows ESP-IDF v5.3's
+// transaction through the regs::SPI_W0..W15 data buffer. Configuration registers are
+// copied into the SPI clock domain by regs::SPI_CMD.UPDATE. Follows ESP-IDF v5.3's
 // spi_ll for the ESP32-C3.
-const uint SPI_BASE = 0x6002_4000;
-const uint CMD      = SPI_BASE + 0x00;
-const uint CTRL     = SPI_BASE + 0x08;
-const uint CLOCK    = SPI_BASE + 0x0C;
-const uint USER     = SPI_BASE + 0x10;
-const uint USER1    = SPI_BASE + 0x14;
-const uint USER2    = SPI_BASE + 0x18;
-const uint MS_DLEN  = SPI_BASE + 0x1C;
-const uint MISC     = SPI_BASE + 0x20;
-const uint DMA_CONF = SPI_BASE + 0x30;
-const uint DMA_INT_CLR = SPI_BASE + 0x38;
-const uint DMA_INT_RAW = SPI_BASE + 0x3C;
-const uint W0       = SPI_BASE + 0x98;
-const uint SLAVE    = SPI_BASE + 0xE0;
-const uint CLK_GATE = SPI_BASE + 0xE8;
-
-// CMD
-const uint CMD_USR = 1u << 24;
-const uint CMD_UPDATE = 1u << 23;
-// CTRL
-const uint CTRL_WR_BIT_ORDER = 1u << 26;
-const uint CTRL_RD_BIT_ORDER = 1u << 25;
-// CLOCK
-const uint CLOCK_EQU_SYSCLK = 1u << 31;
-// USER
-const uint USER_USR_MISO = 1u << 28;
-const uint USER_USR_MOSI = 1u << 27;
-const uint USER_CK_OUT_EDGE = 1u << 9;
-const uint USER_DOUTDIN = 1u << 0;
-// MISC: CK_IDLE_EDGE is CPOL; all six hardware CS lines disabled.
-const uint MISC_CK_IDLE_EDGE = 1u << 29;
-const uint MISC_CS_ALL_DISABLED = 0x3F;
-// DMA_INT_RAW / CLR
-const uint INT_TRANS_DONE = 1u << 12;
-// CLK_GATE: clock on, master clock on, master clock from XTAL (MST_CLK_SEL 0).
-const uint CLK_GATE_VALUE = (1u << 1) | (1u << 0);
+// Clock on, master clock on, master clock from XTAL.
+const uint CLK_GATE_VALUE = regs::SPI_CLK_GATE_MST_CLK_ACTIVE | regs::SPI_CLK_GATE_CLK_EN;
 
 const uint BUFFER_BYTES = 64;
-const uint SIGNAL_CLK  = 63; // FSPICLK_OUT_IDX
-const uint SIGNAL_MISO = 64; // FSPIQ_IN_IDX
-const uint SIGNAL_MOSI = 65; // FSPID_OUT_IDX
 
 struct Bus {
     uint frequency_hz;
@@ -60,11 +24,11 @@ gpio::Pin bus_mosi @local;
 fn Bus? open(Config config = {}) => open_pins(board::SPI_SCK, board::SPI_MOSI, board::SPI_MISO, config);
 
 // Finds the highest clock 40 MHz / (pre * n), pre 1..16, n 2..64, not above
-// `hz`, and returns the CLOCK register value (0 if none fits).
+// `hz`, and returns the regs::SPI_CLOCK register value (0 if none fits).
 fn uint clock_register(uint hz, uint* actual) @local {
     if (hz >= soc::XTAL_HZ) {
         *actual = soc::XTAL_HZ;
-        return CLOCK_EQU_SYSCLK;
+        return regs::SPI_CLOCK_EQU_SYSCLK;
     }
     uint best = 0;
     uint best_pre = 0;
@@ -83,12 +47,13 @@ fn uint clock_register(uint hz, uint* actual) @local {
     if (best == 0) return 0;
     *actual = best;
     uint high = best_n / 2; // ~50 % duty
-    return ((best_pre - 1) << 18) | ((best_n - 1) << 12) | ((high - 1) << 6) | (best_n - 1);
+    return ((best_pre - 1) << regs::SPI_CLOCK_CLKDIV_PRE_SHIFT) | ((best_n - 1) << regs::SPI_CLOCK_CLKCNT_N_SHIFT)
+        | ((high - 1) << regs::SPI_CLOCK_CLKCNT_H_SHIFT) | ((best_n - 1) << regs::SPI_CLOCK_CLKCNT_L_SHIFT);
 }
 
 fn void apply_config() @local {
-    soc::write(CMD, CMD_UPDATE);
-    while ((soc::read(CMD) & CMD_UPDATE) != 0) {}
+    soc::write(regs::SPI_CMD, regs::SPI_CMD_UPDATE);
+    while ((soc::read(regs::SPI_CMD) & regs::SPI_CMD_UPDATE) != 0) {}
 }
 
 fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config = {}) {
@@ -109,29 +74,29 @@ fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config =
         default: return UNSUPPORTED_MODE~;
     }
 
-    soc::enable_peripheral(soc::PERIP_SPI2);
-    soc::write(CLK_GATE, CLK_GATE_VALUE);
-    soc::write(SLAVE, 0);
-    soc::write(DMA_CONF, 0);
-    soc::write(USER, USER_DOUTDIN | USER_USR_MOSI | USER_USR_MISO | (out_edge ? USER_CK_OUT_EDGE : 0));
-    soc::write(USER1, 0);
-    soc::write(USER2, 0);
-    soc::write(MISC, MISC_CS_ALL_DISABLED | (cpol ? MISC_CK_IDLE_EDGE : 0));
-    uint order = config.bit_order == BitOrder.LSB_FIRST ? CTRL_WR_BIT_ORDER | CTRL_RD_BIT_ORDER : 0;
-    soc::modify(CTRL, CTRL_WR_BIT_ORDER | CTRL_RD_BIT_ORDER, order);
-    soc::write(CLOCK, clock);
+    soc::enable_peripheral(regs::PERIP_SPI2);
+    soc::write(regs::SPI_CLK_GATE, CLK_GATE_VALUE);
+    soc::write(regs::SPI_SLAVE, 0);
+    soc::write(regs::SPI_DMA_CONF, 0);
+    soc::write(regs::SPI_USER, regs::SPI_USER_DOUTDIN | regs::SPI_USER_USR_MOSI | regs::SPI_USER_USR_MISO | (out_edge ? regs::SPI_USER_CK_OUT_EDGE : 0));
+    soc::write(regs::SPI_USER1, 0);
+    soc::write(regs::SPI_USER2, 0);
+    soc::write(regs::SPI_MISC, regs::SPI_MISC_CS_ALL_DISABLED | (cpol ? regs::SPI_MISC_CK_IDLE_EDGE : 0));
+    uint order = config.bit_order == BitOrder.LSB_FIRST ? regs::SPI_CTRL_WR_BIT_ORDER | regs::SPI_CTRL_RD_BIT_ORDER : 0;
+    soc::modify(regs::SPI_CTRL, regs::SPI_CTRL_WR_BIT_ORDER | regs::SPI_CTRL_RD_BIT_ORDER, order);
+    soc::write(regs::SPI_CLOCK, clock);
     apply_config();
 
     bus_sck = sck;
     bus_mosi = mosi;
-    soc::route_output(sck, SIGNAL_CLK);
-    soc::route_output(mosi, SIGNAL_MOSI);
-    soc::route_input(SIGNAL_MISO, miso);
+    soc::route_output(sck, regs::SIG_FSPICLK);
+    soc::route_output(mosi, regs::SIG_FSPID);
+    soc::route_input(regs::SIG_FSPIQ, miso);
     return { actual };
 }
 
 fn void Bus.close(self) {
-    soc::disable_peripheral(soc::PERIP_SPI2);
+    soc::disable_peripheral(regs::PERIP_SPI2);
     soc::release_pin(bus_sck);
     soc::release_pin(bus_mosi);
 }
@@ -148,16 +113,16 @@ fn void chunk(char[] tx, char[] rx, usz len, char fill) @local {
             char byte = i < len ? (tx.len > 0 ? tx[i] : fill) : fill;
             value |= (uint)byte << (8 * b);
         }
-        soc::write(W0 + (uint)word * 4, value);
+        soc::write(regs::SPI_W0 + (uint)word * 4, value);
     }
-    soc::write(MS_DLEN, (uint)len * 8 - 1);
+    soc::write(regs::SPI_MS_DLEN, (uint)len * 8 - 1);
     apply_config();
-    soc::write(DMA_INT_CLR, INT_TRANS_DONE);
-    soc::write(CMD, CMD_USR);
-    while ((soc::read(DMA_INT_RAW) & INT_TRANS_DONE) == 0) {}
+    soc::write(regs::SPI_DMA_INT_CLR, regs::SPI_INT_TRANS_DONE);
+    soc::write(regs::SPI_CMD, regs::SPI_CMD_USR);
+    while ((soc::read(regs::SPI_DMA_INT_RAW) & regs::SPI_INT_TRANS_DONE) == 0) {}
     if (rx.len == 0) return;
     for (usz i = 0; i < len; i++) {
-        uint value = soc::read(W0 + (uint)(i / 4) * 4);
+        uint value = soc::read(regs::SPI_W0 + (uint)(i / 4) * 4);
         rx[i] = (char)(value >> (8 * (i % 4)));
     }
 }

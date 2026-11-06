@@ -2,20 +2,9 @@ module embedded::spi;
 
 import embedded::gpio;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
-const uint SPCR = 0x4C;
-const uint SPSR = 0x4D;
-const uint SPDR = 0x4E;
 
-// SPCR
-const char SPE  = 1 << 6;
-const char DORD = 1 << 5;
-const char MSTR = 1 << 4;
-const char CPOL = 1 << 3;
-const char CPHA = 1 << 2;
-// SPSR
-const char SPIF  = 1 << 7;
-const char SPI2X = 1 << 0;
 
 const gpio::Pin SS_PIN   = (gpio::Pin)10;
 const gpio::Pin MOSI_PIN = (gpio::Pin)11;
@@ -49,48 +38,48 @@ fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config =
         default:  spr = 3; double_speed = false;
     }
 
-    char spcr = SPE | MSTR | spr;
-    if (config.bit_order == BitOrder.LSB_FIRST) spcr |= DORD;
+    char spcr = regs::SPE | regs::MSTR | spr;
+    if (config.bit_order == BitOrder.LSB_FIRST) spcr |= regs::DORD;
     switch (config.mode) {
         case Mode.MODE0: break;
-        case Mode.MODE1: spcr |= CPHA;
-        case Mode.MODE2: spcr |= CPOL;
-        case Mode.MODE3: spcr |= CPOL | CPHA;
+        case Mode.MODE1: spcr |= regs::CPHA;
+        case Mode.MODE2: spcr |= regs::CPOL;
+        case Mode.MODE3: spcr |= regs::CPOL | regs::CPHA;
         default: return UNSUPPORTED_MODE~;
     }
 
     // SS high and output first, so the unit cannot drop to slave mode.
     gpio::configure(SS_PIN, gpio::CONFIG_OUTPUT_HIGH)!;
-    gpio::configure(SCK_PIN, (spcr & CPOL) ? gpio::CONFIG_OUTPUT_HIGH : gpio::CONFIG_OUTPUT_LOW)!;
+    gpio::configure(SCK_PIN, (spcr & regs::CPOL) ? gpio::CONFIG_OUTPUT_HIGH : gpio::CONFIG_OUTPUT_LOW)!;
     gpio::configure(MOSI_PIN, gpio::CONFIG_OUTPUT_LOW)!;
     gpio::configure(MISO_PIN, gpio::CONFIG_INPUT)!;
-    soc::write8(SPSR, double_speed ? SPI2X : 0);
-    soc::write8(SPCR, spcr);
+    soc::write8(regs::SPSR, double_speed ? regs::SPI2X : 0);
+    soc::write8(regs::SPCR, spcr);
     return { spcr };
 }
 
 fn void Bus.close(self) {
-    soc::write8(SPCR, 0);
+    soc::write8(regs::SPCR, 0);
     (void)gpio::reset(SCK_PIN);
     (void)gpio::reset(MOSI_PIN);
 }
 
 fn uint Bus.frequency(self) {
     uint divider;
-    switch (self.spcr & 0x03) {
+    switch (self.spcr & regs::SPR_MASK) {
         case 0: divider = 4;
         case 1: divider = 16;
         case 2: divider = 64;
         default: divider = 128;
     }
-    if ((soc::read8(SPSR) & SPI2X) != 0 && divider != 128) divider /= 2;
+    if ((soc::read8(regs::SPSR) & regs::SPI2X) != 0 && divider != 128) divider /= 2;
     return soc::CPU_HZ / divider;
 }
 
 fn char Bus.transfer_byte(self, char byte) {
-    soc::write8(SPDR, byte);
-    while ((soc::read8(SPSR) & SPIF) == 0) {}
-    return soc::read8(SPDR);
+    soc::write8(regs::SPDR, byte);
+    while ((soc::read8(regs::SPSR) & regs::SPIF) == 0) {}
+    return soc::read8(regs::SPDR);
 }
 
 fn void? Bus.transfer(self, char[] tx, char[] rx) {

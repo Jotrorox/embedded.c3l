@@ -1,6 +1,7 @@
 module embedded::irq;
 
 import embedded::backends::esp32::esp32c3::soc;
+import embedded::backends::esp32::esp32c3::regs;
 
 // The saved mstatus CSR. Only its MIE bit matters to `restore()`.
 typedef State = uint;
@@ -47,21 +48,9 @@ constdef Source : inline char {
 const uint SOURCE_COUNT = 62;
 const uint LINE_COUNT = 32; // CPU interrupt lines; line 0 means "not routed"
 
-// Interrupt matrix (INTERRUPT_CORE0). Each source has a map register holding
-// the CPU line it is routed to.
-const uint INTC_BASE = 0x600C_2000;
-const uint INTC_CPU_INT_ENABLE = INTC_BASE + 0x104;
-const uint INTC_CPU_INT_TYPE   = INTC_BASE + 0x108;
-const uint INTC_CPU_INT_CLEAR  = INTC_BASE + 0x10C;
-const uint INTC_CPU_INT_PRI_0  = INTC_BASE + 0x114;
-const uint INTC_CPU_INT_THRESH = INTC_BASE + 0x194;
-
-const uint MSTATUS_MIE = 1u << 3;
-const uint MCAUSE_INTERRUPT = 1u << 31;
-
 Handler[LINE_COUNT] line_handlers @local;
 
-fn uint map_reg(uint source) @local => INTC_BASE + source * 4;
+fn uint map_reg(uint source) @local => regs::INTC_SOURCE_MAP0 + source * 4;
 
 // mstatus is a CSR, which needs register operands that C3 string asm cannot
 // express, so these are tiny naked functions using the calling convention:
@@ -92,7 +81,7 @@ fn void disable() {
     @compiler_barrier();
 }
 
-fn bool is_enabled() => (csr_read_mstatus() & MSTATUS_MIE) != 0;
+fn bool is_enabled() => (csr_read_mstatus() & regs::MSTATUS_MIE) != 0;
 
 fn State save_and_disable() {
     State state = (State)csr_clear_mie();
@@ -123,10 +112,10 @@ fn void? attach(Source source, Handler handler, char priority = 1) {
     if (line == 0) return NO_FREE_LINE~;
 
     line_handlers[line] = handler;
-    soc::write(INTC_CPU_INT_PRI_0 + line * 4, priority);
-    soc::clear_bits(INTC_CPU_INT_TYPE, 1u << line); // level-triggered
+    soc::write(regs::INTC_CPU_INT_PRI_0 + line * 4, priority);
+    soc::clear_bits(regs::INTC_CPU_INT_TYPE, 1u << line); // level-triggered
     soc::write(map_reg(source), line);
-    soc::set_bits(INTC_CPU_INT_ENABLE, 1u << line);
+    soc::set_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
 }
 
 fn void detach(Source source) {
@@ -134,9 +123,9 @@ fn void detach(Source source) {
     State state = save_and_disable();
     defer restore(state);
 
-    uint line = soc::read(map_reg(source)) & 0x1F;
+    uint line = soc::read(map_reg(source)) & regs::INTC_MAP_LINE_MASK;
     if (line == 0) return;
-    soc::clear_bits(INTC_CPU_INT_ENABLE, 1u << line);
+    soc::clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
     soc::write(map_reg(source), 0);
     line_handlers[line] = null;
 }
@@ -145,11 +134,11 @@ fn void detach(Source source) {
 // every source (the boot ROM may have left some connected), disables every
 // line and lets priority 1 and above through.
 fn void init() {
-    soc::write(INTC_CPU_INT_ENABLE, 0);
+    soc::write(regs::INTC_CPU_INT_ENABLE, 0);
     for (uint source = 0; source < SOURCE_COUNT; source++) soc::write(map_reg(source), 0);
-    soc::write(INTC_CPU_INT_CLEAR, 0xFFFF_FFFF);
-    soc::write(INTC_CPU_INT_CLEAR, 0);
-    soc::write(INTC_CPU_INT_THRESH, 1);
+    soc::write(regs::INTC_CPU_INT_CLEAR, 0xFFFF_FFFF);
+    soc::write(regs::INTC_CPU_INT_CLEAR, 0);
+    soc::write(regs::INTC_CPU_INT_THRESH, 1);
 }
 
 // Called for a CPU exception (illegal instruction, misaligned or faulting
@@ -162,17 +151,17 @@ fn void exception(uint mcause, uint mepc, uint mtval) @weak @export("embedded_es
 
 // Common trap dispatcher, called by `trap_entry` with interrupts disabled.
 fn void dispatch(uint mcause, uint mepc, uint mtval) @export("embedded_esp32_trap") {
-    if ((mcause & MCAUSE_INTERRUPT) == 0) {
+    if ((mcause & regs::MCAUSE_INTERRUPT) == 0) {
         exception(mcause, mepc, mtval);
         return;
     }
-    uint line = mcause & 0x1F;
+    uint line = mcause & regs::MCAUSE_LINE_MASK;
     Handler handler = line_handlers[line];
     if (handler) {
         handler();
     } else {
         // Nothing to call, and a level interrupt would fire again at once.
-        soc::clear_bits(INTC_CPU_INT_ENABLE, 1u << line);
+        soc::clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
     }
 }
 

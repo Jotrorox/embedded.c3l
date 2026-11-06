@@ -1,16 +1,9 @@
 module embedded::wdt;
 
 import embedded::time;
+import embedded::backends::avr::atmega328p::regs;
 
-const uint MCUSR  = 0x54;
-const uint WDTCSR = 0x60;
-const uint SREG   = 0x5F;
 
-const char MCUSR_WDRF  = 1 << 3;
-const char WDTCSR_WDE  = 1 << 3;
-const char WDTCSR_WDCE = 1 << 4;
-const char WDTCSR_WDP3 = 1 << 5;
-const char WDTCSR_WDP_LOW_MASK = 0x07;
 
 // 2048 cycles of the 128 kHz watchdog oscillator. Each prescaler step doubles it.
 const ulong BASE_TIMEOUT_US = 16_000;
@@ -35,19 +28,19 @@ fn char reg_read(uint addr) @local {
 macro void timed_wdtcsr_write(char value) @local {
     char staged = value;
     char final_value = @volatile_load(staged);
-    char old_sreg = reg_read(SREG);
+    char old_sreg = reg_read(regs::SREG);
     asm("cli");
     asm("wdr");
-    @volatile_store(*(char*)(uptr)WDTCSR, WDTCSR_WDCE | WDTCSR_WDE);
-    @volatile_store(*(char*)(uptr)WDTCSR, final_value);
-    reg_write(SREG, old_sreg);
+    @volatile_store(*(char*)(uptr)regs::WDTCSR, regs::WDTCSR_WDCE | regs::WDTCSR_WDE);
+    @volatile_store(*(char*)(uptr)regs::WDTCSR, final_value);
+    reg_write(regs::SREG, old_sreg);
 }
 
 // Called once by the startup code, after .bss is cleared and before `start()`.
 // The ATmega328P keeps the watchdog running with the shortest timeout after a
 // watchdog reset, so this has to run early.
 fn void boot() {
-    reset_by_watchdog = (reg_read(MCUSR) & MCUSR_WDRF) != 0;
+    reset_by_watchdog = (reg_read(regs::MCUSR) & regs::MCUSR_WDRF) != 0;
     disable();
 }
 
@@ -70,15 +63,15 @@ fn time::Duration? enable(time::Duration timeout) {
         period <<= 1;
     }
 
-    char value = WDTCSR_WDE | (prescaler & WDTCSR_WDP_LOW_MASK);
-    if (prescaler & 0x08) value |= WDTCSR_WDP3;
+    char value = regs::WDTCSR_WDE | (prescaler & regs::WDTCSR_WDP_LOW_MASK);
+    if (prescaler & 0x08) value |= regs::WDTCSR_WDP3;
     timed_wdtcsr_write(value);
     return time::us(period);
 }
 
 fn void disable() {
     // WDRF overrides WDE, so it has to be cleared before WDE can go low.
-    reg_write(MCUSR, (char)(reg_read(MCUSR) & ~MCUSR_WDRF));
+    reg_write(regs::MCUSR, (char)(reg_read(regs::MCUSR) & ~regs::MCUSR_WDRF));
     timed_wdtcsr_write(0);
 }
 
@@ -87,7 +80,7 @@ fn void feed() {
 }
 
 fn bool is_enabled() {
-    return (reg_read(WDTCSR) & WDTCSR_WDE) != 0;
+    return (reg_read(regs::WDTCSR) & regs::WDTCSR_WDE) != 0;
 }
 
 fn bool caused_reset() {

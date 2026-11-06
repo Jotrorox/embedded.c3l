@@ -3,22 +3,15 @@ module embedded::adc;
 import embedded::gpio;
 import embedded::time;
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
-const uint ADCL   = 0x78;
-const uint ADCH   = 0x79;
-const uint ADCSRA = 0x7A;
-const uint ADMUX  = 0x7C;
-const uint DIDR0  = 0x7E;
 
-// ADMUX: REFS1:0 in bits 7:6, MUX3:0 in bits 3:0.
-const char REFS_AREF     = 0x00;
-const char REFS_AVCC     = 0x40;
-const char REFS_INTERNAL = 0xC0;
-const char REFS_MASK     = 0xC0;
-// ADCSRA
-const char ADEN = 1 << 7;
-const char ADSC = 1 << 6;
-const char ADPS_128 = 0x07; // 16 MHz / 128 = 125 kHz, inside the 50-200 kHz window
+// ADMUX reference selection (REFS1:0).
+const char REFS_AREF     = 0;
+const char REFS_AVCC     = regs::REFS0;
+const char REFS_INTERNAL = regs::REFS1 | regs::REFS0;
+// ADCSRA prescaler.
+const char ADPS_128 = regs::ADPS2 | regs::ADPS1 | regs::ADPS0; // 16 MHz / 128 = 125 kHz, inside the 50-200 kHz window
 
 // Uno A0..A5 are pins 14..19, ADC channels 0..5.
 const uint FIRST_ANALOG_PIN = 14;
@@ -53,8 +46,8 @@ fn Input? open(gpio::Pin pin, Config config = {}) {
     char channel = (char)((uint)pin - FIRST_ANALOG_PIN);
     // Release the pin from GPIO and switch off its digital input buffer.
     (void)gpio::reset(pin);
-    soc::set8(DIDR0, (char)(1 << channel));
-    soc::write8(ADCSRA, ADEN | ADPS_128);
+    soc::set8(regs::DIDR0, (char)(1 << channel));
+    soc::write8(regs::ADCSRA, regs::ADEN | ADPS_128);
     return { refs | channel };
 }
 
@@ -64,20 +57,20 @@ fn ushort? read(gpio::Pin pin) {
 }
 
 fn ushort convert() @local {
-    soc::set8(ADCSRA, ADSC);
-    while ((soc::read8(ADCSRA) & ADSC) != 0) {}
+    soc::set8(regs::ADCSRA, regs::ADSC);
+    while ((soc::read8(regs::ADCSRA) & regs::ADSC) != 0) {}
     // ADCL must be read first: it locks ADCH until ADCH is read.
-    char low = soc::read8(ADCL);
-    return (ushort)soc::read8(ADCH) << 8 | low;
+    char low = soc::read8(regs::ADCL);
+    return (ushort)soc::read8(regs::ADCH) << 8 | low;
 }
 
 fn ushort Input.read(self) {
-    char previous = soc::read8(ADMUX);
-    soc::write8(ADMUX, self.admux);
+    char previous = soc::read8(regs::ADMUX);
+    soc::write8(regs::ADMUX, self.admux);
     // After a reference change the AREF pin (100 nF on the Uno) has to charge
     // or discharge to the new level, which takes milliseconds; wait, then
     // discard one conversion.
-    if ((previous & REFS_MASK) != (self.admux & REFS_MASK)) {
+    if ((previous & regs::REFS_MASK) != (self.admux & regs::REFS_MASK)) {
         time::spin(time::us(REFERENCE_SETTLE_US));
         (void)convert();
     }
@@ -86,7 +79,7 @@ fn ushort Input.read(self) {
 
 fn uint Input.read_millivolts(self) {
     uint full_scale;
-    switch (self.admux & REFS_MASK) {
+    switch (self.admux & regs::REFS_MASK) {
         case REFS_AVCC:     full_scale = 5000;
         case REFS_INTERNAL: full_scale = 1100;
         default: return 0;

@@ -6,12 +6,7 @@ module embedded::backends::avr::atmega328p::soc;
 // The Uno runs from a 16 MHz crystal.
 const uint CPU_HZ = 16_000_000;
 
-// Memory-mapped addresses (I/O address + 0x20) of registers used by more
-// than one backend module.
-const uint SREG = 0x5F;
-const uint PRR  = 0x64;
-
-const char SREG_I = 1 << 7;
+// Register addresses and bit names are in regs.c3.
 
 macro char read8(uint addr) => @volatile_load(*(char*)(uptr)addr);
 macro void write8(uint addr, char value) => @volatile_store(*(char*)(uptr)addr, value);

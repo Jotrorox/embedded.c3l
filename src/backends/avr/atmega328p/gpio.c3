@@ -1,21 +1,23 @@
 module embedded::gpio;
 
+import embedded::backends::avr::atmega328p::regs;
+
 fn char get_port(Pin pin) {
-    if ((int)pin <= 7) return 0x2B;
-    if ((int)pin <= 13) return 0x25;
-    return 0x28;
+    if ((int)pin <= 7) return (char)regs::PORTD;
+    if ((int)pin <= 13) return (char)regs::PORTB;
+    return (char)regs::PORTC;
 }
 
 fn char get_ddr(Pin pin) {
-    if ((int)pin <= 7) return 0x2A;
-    if ((int)pin <= 13) return 0x24;
-    return 0x27;
+    if ((int)pin <= 7) return (char)regs::DDRD;
+    if ((int)pin <= 13) return (char)regs::DDRB;
+    return (char)regs::DDRC;
 }
 
 fn char get_pin_reg(Pin pin) {
-    if ((int)pin <= 7) return 0x29;
-    if ((int)pin <= 13) return 0x23;
-    return 0x26;
+    if ((int)pin <= 7) return (char)regs::PIND;
+    if ((int)pin <= 13) return (char)regs::PINB;
+    return (char)regs::PINC;
 }
 
 fn char get_bit(Pin pin) {
@@ -46,12 +48,12 @@ fn char reg_read(char addr) {
 
 fn void disable_pwm(Pin pin) {
     switch (pin) {
-        case (Pin)3:  reg_clr_mask(0xB0, 0x30);
-        case (Pin)5:  reg_clr_mask(0x44, 0x30);
-        case (Pin)6:  reg_clr_mask(0x44, 0xC0);
-        case (Pin)9:  reg_clr_mask(0x80, 0xC0);
-        case (Pin)10: reg_clr_mask(0x80, 0x30);
-        case (Pin)11: reg_clr_mask(0xB0, 0xC0);
+        case (Pin)3:  reg_clr_mask((char)regs::TCCR2A, regs::COM_B_MASK); // OC2B
+        case (Pin)5:  reg_clr_mask((char)regs::TCCR0A, regs::COM_B_MASK); // OC0B
+        case (Pin)6:  reg_clr_mask((char)regs::TCCR0A, regs::COM_A_MASK); // OC0A
+        case (Pin)9:  reg_clr_mask((char)regs::TCCR1A, regs::COM_A_MASK); // OC1A
+        case (Pin)10: reg_clr_mask((char)regs::TCCR1A, regs::COM_B_MASK); // OC1B
+        case (Pin)11: reg_clr_mask((char)regs::TCCR2A, regs::COM_A_MASK); // OC2A
         default:
     }
 }
@@ -150,7 +152,6 @@ fn void? reset(Pin pin) {
 // to a PINx bit toggles the matching PORTx bit in hardware (ATmega328P
 // datasheet, 14.2.2), which makes `toggle()` a single store with no
 // read-modify-write.
-const char PORT_OFFSET = 2;
 
 struct Output {
     char pin_reg;
@@ -175,12 +176,12 @@ fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
 }
 
 fn void Output.set(self) @inline {
-    char* port = reg_ptr(self.pin_reg + PORT_OFFSET);
+    char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
     @volatile_store(*port, @volatile_load(*port) | self.mask);
 }
 
 fn void Output.clear(self) @inline {
-    char* port = reg_ptr(self.pin_reg + PORT_OFFSET);
+    char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
     @volatile_store(*port, @volatile_load(*port) & (char)~self.mask);
 }
 
@@ -197,7 +198,7 @@ fn void Output.write(self, PinState state) @inline {
 }
 
 fn PinState Output.read(self) @inline {
-    return (@volatile_load(*reg_ptr(self.pin_reg + PORT_OFFSET)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+    return (@volatile_load(*reg_ptr(self.pin_reg + regs::PORT_FROM_PIN)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn PinState Input.read(self) @inline {

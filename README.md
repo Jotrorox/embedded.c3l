@@ -84,6 +84,25 @@ time::spin(time::us(10));                             // busy-wait, works with i
 The examples cover each module: `uart_echo`, `analog_read`, `pwm_fade`,
 `button_irq`, `i2c_scan`, `spi_loopback`.
 
+## Startup and memory
+
+The library owns the reset path: it sets up the stack, initialises `.data` and
+`.bss`, starts the clock and interrupts, then calls your `start()`. Code that
+must run before `start()`, such as board bring-up in a shared package, can
+override the weak boot hook:
+
+```c3
+fn void board_bring_up() @export("embedded_on_boot") {
+    // runs once, after library init, with interrupts on
+}
+```
+
+The linker scripts reserve a minimum stack (128 bytes on the Uno, 8 KB on the
+ESP32-C3) and fail the link if `.data` + `.bss` leave less. Change it per target
+with `"link-args": ["--defsym=__stack_size=256"]`. Variables marked
+`@section(".noinit")` are neither loaded nor cleared, so they survive a
+watchdog reset. `__heap_start`/`__heap_end` mark the free RAM in between.
+
 ## ToDo (central APIs)
 - [X] Digital I/O
 - [x] Time / monotonic clock (`sleep`, `spin`, `since_boot`)

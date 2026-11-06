@@ -18,6 +18,12 @@ fn void __init() @naked @noreturn @export("__init") @section(".text.init") {
     asm("j embedded_esp32_start");
 }
 
+// Called once after the library is initialised and interrupts are on, just
+// before `start()`. Weak: define `fn void ...() @export("embedded_on_boot")`
+// for board bring-up such as enabling a power rail or setting up a console.
+fn void on_boot() @weak @export("embedded_on_boot") {
+}
+
 fn void boot() @noreturn @export("embedded_esp32_start") {
     // The ROM loader only copies loadable sections, so .bss holds whatever
     // the ROM left in RAM until it is cleared here.
@@ -27,6 +33,7 @@ fn void boot() @noreturn @export("embedded_esp32_start") {
     wdt::boot();
     irq::enable();
 
+    on_boot();
     start();
     while (true) asm("wfi");
 }

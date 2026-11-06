@@ -1,24 +1,7 @@
 module embedded::time;
 
-const uint SYSTIMER_BASE = 0x6002_3000;
-const uint SYSTEM_BASE = 0x600C_0000;
+import embedded::backends::esp32::esp32c3::regs;
 
-const uint SYSTIMER_CONF = SYSTIMER_BASE + 0x0000;
-const uint SYSTIMER_UNIT0_OP = SYSTIMER_BASE + 0x0004;
-const uint SYSTIMER_UNIT0_VALUE_HI = SYSTIMER_BASE + 0x0040;
-const uint SYSTIMER_UNIT0_VALUE_LO = SYSTIMER_BASE + 0x0044;
-
-const uint SYSTEM_PERIP_CLK_EN0 = SYSTEM_BASE + 0x0010;
-const uint SYSTEM_PERIP_RST_EN0 = SYSTEM_BASE + 0x0018;
-
-const uint SYSTIMER_CLK_EN_BIT = 31;
-const uint SYSTIMER_TIMER_UNIT0_WORK_EN_BIT = 30;
-const uint SYSTIMER_TIMER_UNIT0_CORE0_STALL_EN_BIT = 28;
-const uint SYSTIMER_TIMER_UNIT0_UPDATE_BIT = 30;
-const uint SYSTIMER_TIMER_UNIT0_VALUE_VALID_BIT = 29;
-const uint SYSTIMER_UNIT0_HI_MASK = 0x000F_FFFF;
-const uint SYSTEM_SYSTIMER_CLK_EN_BIT = 29;
-const uint SYSTEM_SYSTIMER_RST_BIT = 29;
 const ulong ULONG_MAX_VALUE = 0xFFFF_FFFF_FFFF_FFFF;
 const ulong MAX_MS_VALUE = ULONG_MAX_VALUE / 1000;
 const ulong MAX_SECONDS_VALUE = ULONG_MAX_VALUE / 1_000_000;
@@ -34,24 +17,24 @@ fn uint reg_read(uint addr) {
 }
 
 fn ulong systimer_unit0_read_count() {
-    reg_write(SYSTIMER_UNIT0_OP, 1u << SYSTIMER_TIMER_UNIT0_VALUE_VALID_BIT);
-    reg_write(SYSTIMER_UNIT0_OP, 1u << SYSTIMER_TIMER_UNIT0_UPDATE_BIT);
-    while ((reg_read(SYSTIMER_UNIT0_OP) & (1u << SYSTIMER_TIMER_UNIT0_VALUE_VALID_BIT)) == 0) {}
+    reg_write(regs::SYSTIMER_UNIT0_OP, regs::SYSTIMER_UNIT0_VALUE_VALID);
+    reg_write(regs::SYSTIMER_UNIT0_OP, regs::SYSTIMER_UNIT0_UPDATE);
+    while ((reg_read(regs::SYSTIMER_UNIT0_OP) & regs::SYSTIMER_UNIT0_VALUE_VALID) == 0) {}
 
-    uint lo = reg_read(SYSTIMER_UNIT0_VALUE_LO);
-    uint hi = reg_read(SYSTIMER_UNIT0_VALUE_HI) & SYSTIMER_UNIT0_HI_MASK;
+    uint lo = reg_read(regs::SYSTIMER_UNIT0_VALUE_LO);
+    uint hi = reg_read(regs::SYSTIMER_UNIT0_VALUE_HI) & regs::SYSTIMER_UNIT0_VALUE_HI_MASK;
     return ((ulong)hi << 32) | lo;
 }
 
 fn void delay_timer_init() {
-    reg_write(SYSTEM_PERIP_CLK_EN0, reg_read(SYSTEM_PERIP_CLK_EN0) | (1u << SYSTEM_SYSTIMER_CLK_EN_BIT));
-    reg_write(SYSTEM_PERIP_RST_EN0, reg_read(SYSTEM_PERIP_RST_EN0) & ~(1u << SYSTEM_SYSTIMER_RST_BIT));
+    reg_write(regs::SYSTEM_PERIP_CLK_EN0, reg_read(regs::SYSTEM_PERIP_CLK_EN0) | regs::PERIP_SYSTIMER);
+    reg_write(regs::SYSTEM_PERIP_RST_EN0, reg_read(regs::SYSTEM_PERIP_RST_EN0) & ~regs::PERIP_SYSTIMER);
 
-    uint cfg = reg_read(SYSTIMER_CONF);
-    cfg |= 1u << SYSTIMER_CLK_EN_BIT;
-    cfg |= 1u << SYSTIMER_TIMER_UNIT0_WORK_EN_BIT;
-    cfg &= ~(1u << SYSTIMER_TIMER_UNIT0_CORE0_STALL_EN_BIT);
-    reg_write(SYSTIMER_CONF, cfg);
+    uint cfg = reg_read(regs::SYSTIMER_CONF);
+    cfg |= regs::SYSTIMER_CONF_CLK_EN;
+    cfg |= regs::SYSTIMER_CONF_UNIT0_WORK_EN;
+    cfg &= ~regs::SYSTIMER_CONF_UNIT0_CORE0_STALL_EN;
+    reg_write(regs::SYSTIMER_CONF, cfg);
 
     delay_timer_ready = true;
 }

@@ -50,6 +50,7 @@
     "elf-avr": {
       "sources": [
         "src/core/core.c3",
+        "src/rt/**",
         "src/boards/arduino_uno/**",
         "src/backends/avr/atmega328p/**"
       ],
@@ -64,6 +65,7 @@
     "elf-riscv32": {
       "sources": [
         "src/core/core.c3",
+        "src/rt/**",
         "src/boards/esp32c3_supermini/**",
         "src/backends/esp32/esp32c3/**"
       ],

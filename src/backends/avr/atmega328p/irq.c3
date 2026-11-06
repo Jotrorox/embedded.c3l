@@ -1,6 +1,7 @@
 module embedded::irq;
 
 import embedded::backends::avr::atmega328p::soc;
+import embedded::backends::avr::atmega328p::regs;
 
 // The saved status register. Only its I bit matters to `restore()`.
 typedef State = char;
@@ -47,11 +48,11 @@ fn void disable() @inline
     @compiler_barrier();
 }
 
-fn bool is_enabled() @inline => (soc::read8(soc::SREG) & soc::SREG_I) != 0;
+fn bool is_enabled() @inline => (soc::read8(regs::SREG) & regs::SREG_I) != 0;
 
 fn State save_and_disable() @inline
 {
-    State state = (State)soc::read8(soc::SREG);
+    State state = (State)soc::read8(regs::SREG);
     asm("cli");
     @compiler_barrier();
     return state;
@@ -60,7 +61,7 @@ fn State save_and_disable() @inline
 fn void restore(State state) @inline
 {
     @compiler_barrier();
-    soc::write8(soc::SREG, (char)state);
+    soc::write8(regs::SREG, (char)state);
 }
 
 // Body of an interrupt vector. Saves the call-clobbered registers, calls the
@@ -91,7 +92,7 @@ macro void @isr(String $handler)
 fn void __irq_call_z() @naked @nostrip @export("__irq_call_z")
 {
     asm("push r0");
-    asm("in r0, 0x3f");
+    asm("in r0, 0x3f");                 // SREG
     asm("push r0");
     asm("push r1");
     asm("eor r1, r1");
@@ -118,7 +119,7 @@ fn void __irq_call_z() @naked @nostrip @export("__irq_call_z")
     asm("pop r18");
     asm("pop r1");
     asm("pop r0");
-    asm("out 0x3f, r0");
+    asm("out 0x3f, r0");                // SREG
     asm("pop r0");
     asm("pop r31");
     asm("pop r30");
