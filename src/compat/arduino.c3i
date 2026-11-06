@@ -11,14 +11,11 @@ constdef PinMode : inline char {
     ALT = 255,
 }
 
-constdef PinState : inline char {
-	LOW = 0,
-	HIGH = 1,
-}
+alias PinState = gpio::PinState;
 
 fn void pin_mode(gpio::Pin pin, PinMode mode);
 fn void digital_write(gpio::Pin pin, PinState state);
-fn gpio::PinState digital_read(gpio::Pin pin);
+fn PinState digital_read(gpio::Pin pin);
 
 fn void delay(ulong milliseconds);
 fn void delay_ms(ulong milliseconds);

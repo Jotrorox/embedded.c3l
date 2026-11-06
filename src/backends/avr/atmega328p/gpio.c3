@@ -125,8 +125,8 @@ fn PinState? read(Pin pin) {
 }
 
 fn void? toggle(Pin pin) {
-    PinState state = read_output(pin)!!;
-    write(pin, state == PinState.HIGH ? PinState.LOW : PinState.HIGH)!!;
+    PinState state = read_output(pin)!;
+    write(pin, state == PinState.HIGH ? PinState.LOW : PinState.HIGH)!;
 }
 
 fn PinState? read_output(Pin pin) {

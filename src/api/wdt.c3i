@@ -1,0 +1,12 @@
+module embedded::wdt;
+
+// Watchdog control. Startup code disables every hardware watchdog it knows
+// about before `start()` runs; nothing else in the library touches a watchdog.
+// Applications that want watchdog protection call `feed()` from their main
+// loop after enabling the watchdog with MCU-specific code.
+
+// Disable all watchdogs that can reset the MCU. Safe to call more than once.
+fn void disable();
+
+// Reset the watchdog timeout. A no-op when every watchdog is disabled.
+fn void feed();

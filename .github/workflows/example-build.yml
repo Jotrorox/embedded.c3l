@@ -12,14 +12,18 @@ permissions:
 
 jobs:
   build-c3-examples:
-    name: Build ${{ matrix.example }}
+    name: Build ${{ matrix.example }} / ${{ matrix.board }}
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
         example:
-          - examples/blink
+          - blink
+          - digital_read
+        board:
+          - arduino-uno
+          - esp32c3
 
     steps:
       - name: Checkout
@@ -28,6 +32,12 @@ jobs:
       - name: Setup C3
         uses: jotrorox/setup-c3@v1
 
+      # Each example defines one target per board, named "<example>-<board>"
+      # with underscores replaced by dashes. `c3c build` without a target only
+      # builds the first one, so the target is always passed explicitly.
       - name: Build example
-        working-directory: ${{ matrix.example }}
-        run: c3c build
+        working-directory: examples/${{ matrix.example }}
+        run: |
+          target="$(echo "${{ matrix.example }}" | tr '_' '-')-${{ matrix.board }}"
+          c3c build "$target"
+          ls -la build/

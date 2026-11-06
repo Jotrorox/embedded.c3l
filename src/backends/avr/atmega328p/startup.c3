@@ -1,5 +1,7 @@
 module embedded::backends::avr::atmega328p::startup @private;
 
+import embedded::wdt;
+
 extern fn void start();
 extern fn void embedded_avr_time_init();
 
@@ -107,6 +109,7 @@ fn void __init() @naked @noreturn @export("__init") @section(".init") {
         bss++;
     }
 
+    wdt::disable();
     embedded_avr_time_init();
     start();
     abort();

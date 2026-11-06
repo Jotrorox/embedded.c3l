@@ -1,12 +1,10 @@
 {
   "provides": "embedded",
   "linklib-dir": "linked-libs",
-
   "sources": [
     "src/api/**",
     "src/compat/**"
   ],
-
   "templates": {
     "arduino_uno": {
       "target": "elf-avr",
@@ -20,9 +18,10 @@
         "BOARD_ARDUINO_UNO",
         "MCU_ATMEGA328P",
         "BACKEND_AVR"
-      ]
+      ],
+      "function-sections": true,
+      "data-sections": true
     },
-
     "esp32c3_supermini": {
       "target": "elf-riscv32",
       "cpu": "rvimac",
@@ -39,10 +38,11 @@
         "BOARD_ESP32C3_SUPERMINI",
         "MCU_ESP32C3",
         "BACKEND_ESP32C3"
-      ]
+      ],
+      "function-sections": true,
+      "data-sections": true
     }
   },
-
   "targets": {
     "elf-avr": {
       "sources": [
@@ -58,7 +58,6 @@
       "dependencies": [],
       "linked-libraries": []
     },
-
     "elf-riscv32": {
       "sources": [
         "src/core/core.c3",

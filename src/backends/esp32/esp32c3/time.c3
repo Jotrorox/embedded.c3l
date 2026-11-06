@@ -1,14 +1,12 @@
 module embedded::time;
 
 const uint SYSTIMER_BASE = 0x6002_3000;
-const uint TIMG0_BASE = 0x6001_F000;
 const uint SYSTEM_BASE = 0x600C_0000;
 
 const uint SYSTIMER_CONF = SYSTIMER_BASE + 0x0000;
 const uint SYSTIMER_UNIT0_OP = SYSTIMER_BASE + 0x0004;
 const uint SYSTIMER_UNIT0_VALUE_HI = SYSTIMER_BASE + 0x0040;
 const uint SYSTIMER_UNIT0_VALUE_LO = SYSTIMER_BASE + 0x0044;
-const uint TIMG_WDTFEED_OFFSET = 0x0060;
 
 const uint SYSTEM_PERIP_CLK_EN0 = SYSTEM_BASE + 0x0010;
 const uint SYSTEM_PERIP_RST_EN0 = SYSTEM_BASE + 0x0018;
@@ -33,10 +31,6 @@ fn void reg_write(uint addr, uint value) {
 
 fn uint reg_read(uint addr) {
     return @volatile_load(*(uint*)addr);
-}
-
-fn void feed_mwdt() {
-    reg_write(TIMG0_BASE + TIMG_WDTFEED_OFFSET, 1);
 }
 
 fn ulong systimer_unit0_read_count() {
@@ -108,7 +102,6 @@ fn ulong div_u64_u32(ulong value, uint divisor) {
 
 fn ulong read_micros() {
     delay_timer_ensure_init();
-    feed_mwdt();
 
     // ESP32-C3 systimer runs at 16 MHz in the reference implementation.
     return systimer_unit0_read_count() >> 4;
@@ -171,7 +164,6 @@ fn Instant deadline_after(Duration duration) {
 }
 
 fn bool has_elapsed(Instant deadline) {
-    feed_mwdt();
     return (long)(now().ticks - deadline.ticks) >= 0;
 }
 
@@ -181,7 +173,5 @@ fn void sleep(Duration duration) {
 }
 
 fn void sleep_until(Instant deadline) {
-    while (!has_elapsed(deadline)) {
-        feed_mwdt();
-    }
+    while (!has_elapsed(deadline)) {}
 }
