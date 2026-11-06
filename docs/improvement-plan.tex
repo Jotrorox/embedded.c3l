@@ -1,0 +1,636 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{amsmath}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue!60!black,
+  citecolor=black,
+  pdftitle={embedded.c3l -- API and Tooling Improvement Plan},
+  pdfauthor={Review of embedded.c3l against c3c 0.8.6}
+}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{110,110,110}
+\definecolor{codekw}{RGB}{0,60,140}
+
+\lstdefinelanguage{C3}{
+  morekeywords={module,import,fn,macro,struct,typedef,constdef,faultdef,const,extern,return,if,else,while,for,switch,case,default,try,catch,void,bool,char,ichar,short,ushort,int,uint,long,ulong,usz,isz,uptr,inline,true,false,null,any,String,interface,bitstruct,enum,defer,asm},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  commentstyle=\color{codecomment}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{black},
+  frame=single,
+  framerule=0pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  columns=fullflexible,
+  keepspaces=true,
+}
+
+\newcommand{\pkg}[1]{\texttt{#1}}
+\newcommand{\prio}[1]{\textbf{Priority: #1}}
+
+\emergencystretch=3em
+\hyphenpenalty=50
+
+\setlist[itemize]{itemsep=2pt,topsep=4pt}
+\setlist[enumerate]{itemsep=2pt,topsep=4pt}
+
+\title{\pkg{embedded.c3l}\\[4pt]\large API and Tooling Improvement Plan}
+\author{Review against the \pkg{c3c} 0.8.6 pre-release (git \texttt{cc5fafd3f})}
+\date{6 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\pkg{embedded.c3l} is a source-selected hardware abstraction layer (HAL) for the C3 language
+targeting the Arduino Uno (ATmega328P, \pkg{elf-avr}) and the ESP32-C3 SuperMini
+(\pkg{elf-riscv32}). This document reviews the library, its build configuration, its
+examples and its CI against the feature set of the current \pkg{c3c} compiler, and proposes a
+prioritised list of improvements. The goal is a library that a beginner can use within
+minutes (Arduino-style \pkg{blink}) while remaining suitable for professional firmware:
+explicit error handling, zero hidden cost, deterministic timing and a predictable build.
+Every claim about the compiler in this document was checked against the local \pkg{c3c}
+clone or by running the compiler.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%------------------------------------------------------------------------------
+\section{Current state}
+%------------------------------------------------------------------------------
+
+\subsection{Repository layout}
+
+\begin{longtable}{>{\ttfamily}p{0.40\textwidth} p{0.54\textwidth}}
+\toprule
+\textrm{Path} & Role \\
+\midrule
+\endhead
+manifest.json & Library manifest; two \pkg{templates} and two \pkg{targets}. \\
+src/api/gpio.c3i, time.c3i & Public, backend-independent interfaces. \\
+src/compat/arduino.c3(i) & Arduino-flavoured convenience shim on top of the API. \\
+src/core/core.c3 & \pkg{@volatile\_load} / \pkg{@volatile\_store} builtin macros, placed in \pkg{std::core::embedded}. \\
+src/boards/*/board.c3 & Per-board pin name constsets (\pkg{embedded::board}). \\
+src/backends/avr/atmega328p/ & GPIO, timer-0 clock, startup/vector table, compiler-rt shims. \\
+src/backends/esp32/esp32c3/ & GPIO, systimer clock, startup/watchdog disable, compiler-rt shims. \\
+linked-libs/elf-avr/arduino.ld & AVR linker script (32\,K flash, 2\,K SRAM). \\
+linked-libs/elf-riscv32/esp32c3.ld & ESP32-C3 linker script (IRAM/DRAM only). \\
+examples/blink, examples/digital\_read, examples/watchdog & Three examples, each with two project targets. \\
+.github/workflows/ & Example build and nightly zip release. \\
+flash.txt & Hand-written flashing notes (Linux device paths). \\
+\bottomrule
+\end{longtable}
+
+\subsection{What works today}
+
+Both examples build with the current compiler. Measured on this machine:
+
+\begin{center}
+\begin{tabular}{llrrr}
+\toprule
+Target & Output & text & data & bss \\
+\midrule
+\pkg{blink-arduino-uno} & 19\,KB ELF & 4980 & 132 & 10 \\
+\pkg{blink-esp32c3} & 12\,KB ELF & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The AVR build prints \texttt{WARNING! This architecture is unsupported.}
+The source of that warning is \pkg{arch\_is\_supported()} in \pkg{src/compiler/target.c}, which
+whitelists only wasm32/64, x86\_64, aarch64, riscv32 and riscv64. AVR therefore has
+``best-effort'' status in the compiler, which matters for the roadmap (Section~\ref{sec:upstream}).
+
+\subsection{Compiler features relevant to this library}
+
+The following \pkg{c3c} 0.8.6 features were confirmed in the local clone and are directly
+usable by \pkg{embedded.c3l}:
+
+\begin{itemize}
+  \item \textbf{Library templates.} A manifest may define \pkg{templates}; a project target
+        selects one with \pkg{"template": "lib/name"}. Template keys are validated against the
+        full project-target property list, and target-local keys override the template
+        (\pkg{project.c}, lines 918--932). Features from the template are \emph{appended} to the
+        target's features. Verified: templates may carry \pkg{extension},
+        \pkg{function-sections} and \pkg{data-sections}.
+  \item \textbf{Section GC.} \pkg{function-sections} / \pkg{data-sections} (new in 0.8.5) place every
+        function and global in its own section so \pkg{--gc-sections} can drop them.
+  \item \textbf{Feature flags.} \pkg{@feat(A, B)} on declarations and modules, \pkg{\$feat(X)} as a
+        compile-time boolean, \pkg{-D}/\pkg{-U} on the command line and \pkg{features} in templates,
+        projects and targets. Top-level \pkg{@if} is deprecated in favour of \pkg{@feat}.
+  \item \textbf{Low-level attributes.} \pkg{@naked}, \pkg{@section}, \pkg{@noreturn}, \pkg{@export},
+        \pkg{@cname}, \pkg{@asmname} (0.8.6), \pkg{@weak}, \pkg{@nostrip}, \pkg{@used}, \pkg{@align},
+        \pkg{@noinline}, \pkg{@callconv} (only \pkg{cdecl}, \pkg{veccall}, \pkg{stdcall}; no interrupt
+        convention).
+  \item \textbf{Builtins.} \pkg{\$\$volatile\_load/store}, the \pkg{\$\$atomic\_*} family,
+        \pkg{\$\$memcpy/memset(\_inline)}, \pkg{\$\$trap}, \pkg{\$\$unreachable}.
+  \item \textbf{Environment.} \pkg{std::core::env} exposes \pkg{FREESTANDING}, \pkg{FREESTANDING\_ELF},
+        \pkg{NO\_LIBC}, \pkg{ARCH\_32\_BIT}, \pkg{MEMORY\_ENV}, \pkg{REGISTER\_SIZE},
+        \pkg{COMPILER\_OPT\_LEVEL}, \pkg{SAFE\_MODE}, etc.
+  \item \textbf{Build pipeline.} \pkg{exec} scripts (shell or \pkg{.c3}) run per target, with
+        \pkg{env}/\pkg{env-override} and \pkg{\$\{NAME\}} expansion (0.8.6), gated by
+        \pkg{--trust=full}; \pkg{depends-on} between targets; \pkg{source-lib} target type and
+        \pkg{c3c source-lib} to pack a \pkg{.c3l}; \pkg{--emit-asm}, \pkg{--emit-llvm},
+        \pkg{--print-linking}, \pkg{--stats}.
+  \item \textbf{Manifest metadata.} \pkg{version}, \pkg{authors} and \pkg{langrev} are now accepted
+        in \pkg{manifest.json}; \pkg{vendor} is a free-form extension slot ignored by the compiler.
+  \item \textbf{Panic routing.} \pkg{--panicfn} names a function and feeds \pkg{\$\$PANIC\_FN};
+        compiler-generated panics live in \pkg{std::core::runtime::panics}.
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\section{Findings}
+%------------------------------------------------------------------------------
+
+Findings are grouped by area. Each ends with a concrete proposal and a priority:
+\textbf{P1} (fix soon, affects correctness, size or every user),
+\textbf{P2} (meaningful quality-of-life or professional-use gap),
+\textbf{P3} (nice to have / long term).
+
+%..............................................................................
+\subsection{Build configuration and templates}
+\label{sec:build}
+
+\paragraph{F1. Dead-code stripping is not enabled; firmware is more than twice as large as needed.}
+The templates pass \pkg{--gc-sections} to the linker but do not set
+\pkg{function-sections}/\pkg{data-sections}, so the linker has nothing to collect.
+Adding both to the templates was tested with a copy of the library:
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+\pkg{blink-arduino-uno} & text & data & total \\
+\midrule
+current templates & 4980 & 132 & 5122 \\
+with \pkg{function-sections} + \pkg{data-sections} & 2124 & 109 & 2243 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+A 57\,\% reduction with no source change. \prio{P1}
+\textit{Status: fixed, both templates now set \pkg{function-sections} and \pkg{data-sections}.}
+
+\paragraph{F2. Boilerplate every user has to repeat.}
+Each example target repeats \pkg{"type"}, \pkg{"name"} (equal to the key) and
+\pkg{"extension": ".elf"}. \pkg{extension} is a valid template key (verified), so it belongs in
+the template. \pkg{name} is redundant. A user target should be reducible to:
+
+\begin{lstlisting}
+"blink-uno": { "type": "executable", "template": "embedded/arduino_uno" }
+\end{lstlisting}
+\prio{P1}
+\textit{Status: fixed, both templates set \pkg{extension}, and the example targets are reduced to \pkg{type} and \pkg{template}. The output name defaults to the target key.}
+
+\paragraph{F3. No safety, panic or debug policy in the templates.}
+\pkg{Oz} implies ``unsafe, no panic messages, no backtrace'', which is fine for release but
+leaves no path to a debug build. Professional projects need two profiles per board.
+Proposal: ship two templates per board.
+\begin{itemize}
+  \item \pkg{<board>} (release): \pkg{Oz}, \pkg{safe=false}, \pkg{panic-msg=false}, \pkg{debug-info=none}.
+  \item \pkg{<board>\_debug}: \pkg{O1} or \pkg{Os}, \pkg{safe=true}, \pkg{debug-info=line-tables},
+        \pkg{panic-msg=true}, \pkg{trap-on-wrap=true}.
+\end{itemize}
+Add a documented \pkg{panicfn} hook so that a panic can blink an LED or write to UART rather than spin
+silently. Since the templates merge with target-local settings, a user may still override any
+single key. \prio{P2}
+
+\paragraph{F4. One template per board bundles MCU and board; adding a second ATmega328P board
+would duplicate everything.}
+The manifest currently binds \pkg{target} $\rightarrow$ one board. Because \pkg{targets} in the
+manifest are keyed by \pkg{arch-os}, two AVR boards would share the \pkg{elf-avr} target and
+therefore the same \pkg{sources} and linker script, which breaks as soon as a second AVR board
+appears. Proposal: keep MCU code selection in the manifest target (\pkg{elf-avr} compiles all
+AVR MCU backends, each module guarded by \pkg{@feat(MCU\_ATMEGA328P)} etc.), move board pin maps
+behind \pkg{@feat(BOARD\_...)} inside a single \pkg{src/boards/**} glob, and select the linker script
+through the template's \pkg{link-args} rather than the target's. Templates then stay thin:
+\pkg{cpu}, \pkg{features}, \pkg{link-args}. \prio{P2}
+
+\paragraph{F5. Missing manifest metadata and schema.}
+\pkg{manifest.json} has no \pkg{version}, \pkg{authors} or \pkg{langrev} (all accepted since 0.8.6),
+and no \pkg{vendor} block. A \pkg{vendor} block is the right place for machine-readable
+board data (flash tool, chip id, default port pattern, flash size) that a future flashing helper
+or IDE plugin can read without parsing C3. \prio{P2}
+
+\paragraph{F6. \pkg{std::core::embedded} hijacks the standard-library namespace.}
+\pkg{core.c3} declares \pkg{module std::core::embedded} so that \pkg{@volatile\_load} and
+\pkg{@volatile\_store} are \pkg{@builtin} and visible everywhere. It works, but any future stdlib
+module with that name collides, and users are surprised to find library code under \pkg{std::}.
+Proposal: \pkg{module embedded::core} with the same \pkg{@builtin} macros (\pkg{@builtin} does not
+require the \pkg{std::} prefix), and add typed register helpers (\pkg{@reg\_read}, \pkg{@reg\_write},
+\pkg{@reg\_set\_bits}, \pkg{@reg\_clear\_bits}, \pkg{@reg\_update}) so the five near-identical
+\pkg{reg\_*} helper sets in the backends collapse into one. \prio{P2}
+
+\paragraph{F7. \pkg{exec} is not used; flashing is a hand-copied command.}
+\pkg{flash.txt} hard-codes Linux device paths and \pkg{esptool.py} invocations. The compiler can
+run post-build scripts per target (\pkg{exec}, \pkg{env}, \pkg{\$\{NAME\}} expansion) when the user
+opts in with \pkg{--trust=full}. Proposal: ship \pkg{scripts/} in the library with a portable
+\pkg{flash.c3} (or small shell scripts) and document the one-line opt-in; see
+Section~\ref{sec:tooling}. \prio{P2}
+
+%..............................................................................
+\subsection{Public API}
+\label{sec:api}
+
+\paragraph{A1. Two incompatible \pkg{PinState} types.}
+\pkg{embedded::compat::arduino} redefines \pkg{PinState} with the same values as
+\pkg{embedded::gpio::PinState}. As a result \pkg{digital\_write} takes the compat type and
+\pkg{digital\_read} returns the gpio type, so \pkg{digital\_write(pin, digital\_read(other))}
+does not type-check without a cast. Proposal: delete the duplicate and re-export with
+\pkg{alias PinState = gpio::PinState;} (or import the constants directly). Same for \pkg{HIGH}/\pkg{LOW}.
+\prio{P1}
+\textit{Status: fixed, the compat layer now aliases \pkg{gpio::PinState}.}
+
+\paragraph{A2. \pkg{toggle} panics instead of returning the fault.}
+Both backends implement \pkg{toggle} as \pkg{read\_output(pin)!!} followed by \pkg{write(...)!!}.
+With \pkg{Oz} and no panic function this traps the MCU silently on an invalid pin, which contradicts
+the rest of the API that returns \pkg{INVALID\_PIN}. Replace with the \pkg{!} rethrow operator. \prio{P1}
+\textit{Status: fixed, both backends now rethrow.}
+
+\paragraph{A3. \pkg{Config} is positional and verbose at the call site.}
+The compat layer has to write the following five times:
+
+\begin{lstlisting}[language=C3]
+gpio::configure(pin, { Direction.OUTPUT, Pull.NONE, OutputType.PUSH_PULL,
+                       DriveStrength.DEFAULT, PinState.LOW });
+\end{lstlisting}
+\noindent Proposal: order fields so zero-initialised
+defaults are sensible (\pkg{Direction.DISABLED}=0 is wrong for this; make \pkg{INPUT} the zero
+value), use designated initialisers in docs (\pkg{\{ .direction = OUTPUT \}}), and provide
+constant presets plus one-liners:
+
+\begin{lstlisting}[language=C3]
+const Config OUTPUT_LOW   = { .direction = OUTPUT };
+const Config INPUT_PULLUP = { .direction = INPUT, .pull = UP };
+
+fn void? output(Pin pin, PinState initial = LOW);
+fn void? input(Pin pin, Pull pull = NONE);
+\end{lstlisting}
+Default arguments are supported by C3 and remove most of the compat layer's reason to exist.
+\prio{P1}
+\textit{Status: fixed. \pkg{Direction.INPUT} was already the zero value. \pkg{gpio.c3i} documents designated initialisers and adds the presets \pkg{CONFIG\_INPUT}, \pkg{CONFIG\_INPUT\_PULLUP}, \pkg{CONFIG\_INPUT\_PULLDOWN}, \pkg{CONFIG\_OUTPUT\_LOW} and \pkg{CONFIG\_OUTPUT\_HIGH} (prefixed so they cannot be confused with the \pkg{Direction} and \pkg{PinMode} members), plus \pkg{output(pin, initial = LOW)} and \pkg{input(pin, pull = NONE)}, which return the A4 handles. \pkg{pin\_mode} now uses the presets.}
+
+\paragraph{A4. No pin handle type; every call re-validates and re-decodes the pin.}
+Each \pkg{write} on AVR recomputes port/bit via three range checks and calls \pkg{disable\_pwm}
+(a six-way switch) on \emph{every} write. For a bit-banged protocol this dominates. Proposal:
+add an \pkg{Output}/\pkg{Input} handle struct produced by \pkg{configure} that caches the decoded
+register address and mask, with methods \pkg{set}, \pkg{clear}, \pkg{toggle}, \pkg{read}:
+
+\begin{lstlisting}[language=C3]
+Output led = gpio::output(board::BUILTIN_LED)!;
+led.set(); led.clear(); led.toggle();
+\end{lstlisting}
+Keep the pin-number functions as the simple layer. The handle methods need no fault return,
+which also makes the hot path infallible and inlinable. \prio{P1}
+\textit{Status: fixed. Each backend defines \pkg{Output} and \pkg{Input}: AVR caches the PINx address and mask (2 bytes, PORTx is PINx+2, and \pkg{toggle} is a single PINx write), ESP32-C3 caches the mask. The methods are \pkg{set}, \pkg{clear}, \pkg{toggle}, \pkg{write}, \pkg{read} on \pkg{Output} and \pkg{read}, \pkg{is\_high}, \pkg{is\_low} on \pkg{Input}. They are listed only as comments in \pkg{gpio.c3i} because a \pkg{.c3i} cannot declare methods that a backend defines. With constant pins they compile to single \pkg{in}/\pkg{out} instructions on AVR. \pkg{gpio::write} no longer calls \pkg{disable\_pwm}; \pkg{configure} and \pkg{reset} still do. \pkg{examples/digital\_read} now uses the handles.}
+
+\paragraph{A5. \pkg{Pin} is \pkg{ushort}, \pkg{board::Pin} is a constset.}
+Fine today, but \pkg{supports()} and \pkg{is\_valid()} are runtime checks on a value that is almost
+always a compile-time constant. Proposal: add \pkg{\$assert}-based compile-time variants
+(\pkg{@output(\$pin)} macro) that reject an invalid pin at compile time when the argument is
+constant, and fall back to the runtime path otherwise. \prio{P3}
+
+\paragraph{A6. Time API: good shape, a few sharp edges.}
+\begin{itemize}
+  \item \pkg{Duration} is a 64-bit microsecond struct and \pkg{ms()} / \pkg{seconds()} go through a
+        shift-and-add saturating multiply loop. On AVR a \pkg{ulong} multiply is already expensive;
+        the saturating loop costs more code than a plain multiply with an overflow check
+        (\pkg{@mul\_overflow} / \pkg{\$\$overflow\_mul}). Also provide a \pkg{Duration32} or
+        accept that \pkg{ms(ulong)} on a 16-bit MCU is heavy and document it.
+  \item \pkg{clock\_info()} reports resolution but the API has no way to ask for a
+        \emph{busy-wait vs. sleep} policy. Add \pkg{sleep} (may idle the core, feeds watchdog) and
+        \pkg{spin} (pure busy-wait, interrupt-safe) as separate functions.
+  \item \pkg{millis()} in the compat layer constructs an \pkg{Instant} with tick 0; document
+        that boot time is tick 0 or expose \pkg{time::since\_boot()} in the core API.
+  \item The ESP32-C3 backend feeds the watchdog inside \pkg{has\_elapsed}, i.e.\ inside the time
+        API. Watchdog policy belongs in a \pkg{wdt} module, not in the clock. See A9.
+\end{itemize}
+\prio{P2}
+\textit{Status: fixed. \pkg{ms()} and \pkg{seconds()} are a range check plus a plain multiply (the AVR runtime gained \pkg{\_\_muldi3}, and both runtimes gained the 64-bit division and shift helpers); the cost on AVR is documented in \pkg{time.c3i}. \pkg{spin(Duration)} busy-waits without interrupts (a cycle-counted loop on AVR, systimer polling on ESP32-C3). \pkg{sleep} idles the AVR core between timer interrupts while the deadline is more than \textasciitilde 2\,ms away and never feeds the watchdog. \pkg{since\_boot()} is in the core API and the compat \pkg{millis()}/\pkg{micros()} use it. The watchdog item was already done under A9. The ESP32-C3 systimer clock enable used bit 30 instead of 29, which is fixed. The AVR clock was computed in 32 bits and wrapped after 71.6 minutes, which hung any deadline spanning the wrap; that is fixed too, and deadlines clamp very long durations instead of wrapping. No \pkg{Duration32} was added.}
+
+\paragraph{A7. Interrupt model is absent from the public API, yet the backends rely on it.}
+The AVR clock uses a hand-written \pkg{\_\_vector\_16} with 17 push/pop pairs, and the vector
+table is a 26-entry \pkg{rjmp} list. Users have no way to register a handler. Proposal:
+\begin{itemize}
+  \item \pkg{embedded::irq} with \pkg{disable()}, \pkg{enable()}, \pkg{@critical \{ ... \}} (save/restore
+        SREG or mstatus) and typed \pkg{IrqLine} constsets per MCU.
+  \item A weak-symbol vector table: every vector is \pkg{@weak @export("\_\_vector\_N")} defaulting to
+        \pkg{\_\_bad\_interrupt}; a user or peripheral module overrides by defining the symbol.
+        \pkg{@weak} and \pkg{@nostrip} are available today.
+  \item Until an interrupt calling convention exists (Section~\ref{sec:upstream}), provide an
+        \pkg{@isr(N)} macro that generates the naked prologue/epilogue so the user writes only the body.
+\end{itemize}
+\prio{P2}
+\textit{Status: fixed. \pkg{embedded::irq} (\pkg{src/api/irq.c3i}) has \pkg{enable}, \pkg{disable}, \pkg{is\_enabled}, \pkg{save\_and\_disable}/\pkg{restore} and \pkg{@critical}. String \pkg{asm} carries no memory clobber, so these use a new \pkg{@compiler\_barrier()}. AVR: every vector jumps to \pkg{\_\_vector\_N}, unused ones are \pkg{@weak} defaults, \pkg{\_\_bad\_interrupt} is weak too, and \pkg{irq::@isr("handler")} is a five-instruction vector body that jumps to one shared register-saving trampoline, so handlers are plain exported functions. The time ISR uses it as well. \pkg{@isr} takes the handler's exported name because c3c has no way to get a function's link name. ESP32-C3: a vectored \pkg{mtvec} table, a common trap entry, and \pkg{irq::attach(Source, handler, priority)} which routes a peripheral source through the interrupt matrix; CPU exceptions call a weak \pkg{embedded\_esp32\_exception}. The ESP32-C3 start-up now clears \pkg{.bss} (it never did), \pkg{.rodata} moved to DRAM, and DRAM data now starts after the code, because IRAM and DRAM are the same physical SRAM and previously overlapped.}
+
+\paragraph{A8. Missing peripherals.}
+The README lists PWM, ADC, UART, I2C, SPI, external interrupts and clocks. UART existed in commit
+\pkg{f72ca45} (ESP32-C3 USB-Serial/JTAG, with a 200-line home-grown \pkg{printf}) and was removed
+in \pkg{02a0cba}. Proposed order, by how often a user needs it on day one:
+\begin{enumerate}
+  \item \textbf{UART / console} -- blocking \pkg{write}, non-blocking \pkg{try\_read}, and an
+        \pkg{io::OutStream} implementation so \pkg{std::io} formatting works once the stdlib
+        is usable (see A10). Until then a minimal \pkg{print\_uint}/\pkg{print\_hex} is enough;
+        do not re-implement \pkg{printf}.
+  \item \textbf{ADC} -- \pkg{adc::read(Channel) -> ushort?}, with \pkg{Resolution} and reference
+        selection in a \pkg{Config}.
+  \item \textbf{PWM} -- \pkg{pwm::Channel} with \pkg{set\_duty(permille)} and \pkg{set\_frequency}.
+        Note the AVR backend already knows which timer owns which pin (\pkg{disable\_pwm}).
+  \item \textbf{External interrupts}, then \textbf{I2C}, \textbf{SPI} as blocking master drivers.
+\end{enumerate}
+Each module should follow the same pattern: \pkg{.c3i} in \pkg{src/api}, \pkg{Capability} query,
+\pkg{Config} struct with defaults, fault set, and a handle type. \prio{P2}
+\textit{Status: implemented for both boards, compile-tested only (not yet run on hardware). New modules \pkg{uart} (blocking writes, non-blocking \pkg{try\_read}, \pkg{write\_uint}/\pkg{write\_hex}; ESP32-C3 UART0/1 plus the USB-Serial-JTAG port as \pkg{board::CONSOLE}), \pkg{adc} (one-shot, handle with \pkg{read}/\pkg{read\_millivolts}; ESP32-C3 uncalibrated), \pkg{pwm} (permille duty, per-channel frequency; AVR timers 0/1/2, ESP32-C3 LEDC), \pkg{exti} (AVR INT0/INT1, ESP32-C3 any GPIO), \pkg{i2c} and \pkg{spi} (blocking masters with timeouts; ESP32-C3 pins routed through the GPIO matrix). Each has a \pkg{.c3i} with \pkg{Config} (zero = defaults), a fault set and a handle type, plus a \pkg{supports()} query where pins differ. Examples: \pkg{uart\_echo}, \pkg{analog\_read}, \pkg{pwm\_fade}, \pkg{button\_irq}, \pkg{i2c\_scan}, \pkg{spi\_loopback}, all in the CI matrix. The \pkg{io::OutStream} part is not done because it needs the stdlib (A10).}
+
+\paragraph{A9. Watchdog handling is implicit and scattered.}
+The ESP32-C3 startup disables three watchdogs, and then GPIO and time functions still feed
+TIMG0 on every call (\pkg{feed\_mwdt} in \pkg{gpio::write}, \pkg{read}, \pkg{configure}, \pkg{has\_elapsed}).
+If the watchdog is disabled, feeding is wasted code and bus traffic in the hottest paths; if it is
+intended as a safety feature it must be explicit. Proposal: \pkg{embedded::wdt} with
+\pkg{disable()}, \pkg{enable(Duration)}, \pkg{feed()}; startup disables; nothing else touches it.
+\prio{P1}
+\textit{Status: fixed for \pkg{disable()} and \pkg{feed()}. \pkg{embedded::wdt} exists for both
+backends, startup calls \pkg{wdt::disable()} (the AVR startup now also clears a watchdog left running
+after a watchdog reset), and GPIO/time no longer feed anything. \pkg{enable(Duration)} now exists too.
+It rounds up to the nearest timeout the hardware supports and returns that timeout. The AVR backend
+uses $16\,\text{ms}\cdot 2^n$, the ESP32-C3 backend uses MWDT0 from XTAL with $1\,\mu$s ticks.
+\pkg{info()}, \pkg{is\_enabled()} and \pkg{caused\_reset()} were added, along with an \pkg{examples/watchdog}.
+Two ESP32-C3 bugs were also fixed: the config-update bit is 22, not 13, and \pkg{feed()} has to unlock write protection.}
+
+\paragraph{A10. The standard library is switched off entirely.}
+\pkg{use-stdlib=false} means no \pkg{String} methods, no \pkg{io}, no \pkg{math}, no
+\pkg{List}, and the library must ship its own \pkg{memset}/\pkg{memcpy}/division shims. The
+stdlib has a \pkg{\_nolibc} layer and \pkg{env::FREESTANDING}; the ESP32-C3 (RISC-V, 384\,KB RAM) is a
+realistic target for \pkg{use-stdlib=true} with \pkg{link-libc=false} and \pkg{memory-env=tiny}.
+Proposal: investigate per board. Keep AVR freestanding; for RISC-V try the stdlib with a tiny
+bump allocator and report which modules link. This is the single biggest lever for
+``capable of professional projects''. \prio{P2}
+\textit{Status: declined.}
+
+\paragraph{A11. Compat layer naming.}
+There are five names for two functions:
+\begin{center}\pkg{delay}, \pkg{delay\_ms}, \pkg{delay\_us}, \pkg{delay\_microseconds}, \pkg{delayMicroseconds}\end{center}
+Keep the two Arduino names \pkg{delay} and \pkg{delay\_microseconds}, mark the camelCase one as
+\pkg{@deprecated} and drop the rest. The compat layer should be a thin, faithful Arduino surface, not a second API. \prio{P3}
+
+%..............................................................................
+\subsection{Backends and runtime}
+
+\paragraph{B1. Module naming is inconsistent.}
+The AVR runtime module carries the full backend path, while the ESP32-C3 one is a plain
+\pkg{module runtime @private;}. Adopt one scheme everywhere:
+
+\begin{lstlisting}[language=C3]
+module embedded::backends::<arch>::<mcu>::<unit>;   // MCU code
+module embedded::boards::<board>;                   // pin maps
+\end{lstlisting}
+\noindent
+This lets two boards coexist in one build directory. \prio{P2}
+\textit{Status: fixed for the backends. Both runtime modules are gone (see B2), the private backend modules are \pkg{embedded::backends::<arch>::<mcu>::<unit>} (\pkg{startup}, \pkg{soc}, \pkg{regs}), and the shared runtime is \pkg{embedded::rt}. Backend files that implement a public interface keep its module name (\pkg{embedded::gpio} and so on), which is how a \pkg{.c3i} is implemented. The board module stays \pkg{embedded::board}: it is the selected board's public API (\pkg{board::Pin.D13}), only one board is compiled per target, and renaming it would break every user. Several boards in one build is F4.}
+
+\paragraph{B2. Compiler-rt shims are duplicated and hand-rolled.}
+\pkg{\_\_mulsi3}, \pkg{\_\_udivsi3}, \pkg{memset}, \pkg{memcpy} exist in both backends with different
+algorithms. Proposal: one \pkg{src/rt/} directory, included for every freestanding target,
+with \pkg{@weak @nostrip @cname("...")} definitions following the stdlib's own
+\pkg{\_compiler\_rt} style, and \pkg{@feat(ARCH\_32\_BIT)} guards where the width differs.
+Prefer \pkg{\$\$memcpy\_inline}-based implementations where the backend is allowed to expand them.
+\prio{P2}
+\textit{Status: fixed. \pkg{src/rt/} (\pkg{embedded::rt}) is in both targets' sources: \pkg{mem.c3} (\pkg{memset}, \pkg{memcpy}, \pkg{memmove}), \pkg{int32.c3} (\pkg{\_\_mulsi3}, 32-bit division), \pkg{int64.c3} (\pkg{\_\_muldi3}, 64-bit division), \pkg{shift64.c3} (64-bit shifts, \pkg{@feat(!BACKEND\_AVR)} because C \pkg{int} is 16 bits there) and \pkg{avr.c3} (\pkg{@feat(BACKEND\_AVR)}: \pkg{\_\_mulqi3}, \pkg{\_\_mulhi3} and the libgcc-ABI \pkg{\_\_[u]divmod\{qi,hi,si\}4}). Every helper is \pkg{@weak @export}. \pkg{@nostrip} is not used because it would defeat section GC, and the loops are plain because \pkg{\$\$memcpy\_inline} needs a constant length. All helpers were checked on the host against native arithmetic, two million random and edge-case operand pairs each. Consolidating them found three bugs. The AVR \pkg{\_\_[u]divmodhi4} and \pkg{\_\_[u]divmodsi4} returned quotient and remainder in swapped halves, so every 16- and 32-bit \pkg{/} and \pkg{\%} on AVR was wrong; the UART baud, I2C clock, PWM and ADC calculations use them. \pkg{\%} on \pkg{char} did not link on AVR because \pkg{\_\_mulqi3} was missing. The RV32 \pkg{\_\_udivsi3} returned 0 when the dividend had its top bit set (latent, since the M extension divides in hardware). The ESP32-C3 also had no \pkg{memcpy}. 32-bit multiply code on AVR is 118 bytes smaller.}
+
+\paragraph{B3. Magic numbers for registers.}
+\pkg{0x2B}, \pkg{0x44}, \pkg{0xB0} on AVR and \pkg{(1u << 12) | (1u << 9)} on ESP32-C3 are
+unnamed. Proposal: a \pkg{regs.c3} per MCU with named constants (\pkg{PORTD}, \pkg{DDRD},
+\pkg{IO\_MUX\_FUN\_IE}, \ldots) and bitstructs for multi-field registers. C3 \pkg{bitstruct}
+with an explicit backing \pkg{uint} maps very well onto peripheral registers and documents the
+layout in code. Longer term, generate \pkg{regs.c3} from SVD/ATDF files
+(Section~\ref{sec:tooling}). \prio{P2}
+\textit{Status: fixed, except the SVD/ATDF generation. Each MCU has a \pkg{regs.c3} (\pkg{embedded::backends::<arch>::<mcu>::regs}) with every register address and bit field the backend uses, named after the datasheet or the ESP-IDF \pkg{soc} headers and grouped by peripheral: 133 constants for the ATmega328P and 291 for the ESP32-C3, including the GPIO-matrix signal numbers. The per-module copies and duplicates are gone (ESP32-C3 \pkg{gpio} and \pkg{time} redefined \pkg{soc}'s registers), and the remaining raw values (\pkg{gpio}'s port addresses and PWM-pin table on AVR, \pkg{(1u << 12) | (1u << 9)} and inline field masks on ESP32-C3) are named. Values that encode a choice (prescaler, PWM mode, ADC reference) stay in their module but are built from \pkg{regs::} fields. All 18 example images are byte-identical before and after. No bitstructs: c3c 0.8.6 does not accept a bitstruct literal cast to \pkg{uint} as a constant in another module, so the multi-field layouts are documented in comments. The \pkg{reg\_*} helper duplication remains part of F6.}
+
+\paragraph{B4. Linker scripts are minimal.}
+\begin{itemize}
+  \item AVR: no \pkg{\_\_stack\_top} symbol (stack is set from a literal in \pkg{\_\_init}), no
+        \pkg{.noinit}, no \pkg{ASSERT} on SRAM overflow, no \pkg{.eeprom}. \pkg{.rodata} is copied to
+        SRAM (correct for classic AVR, but costs RAM; document it).
+  \item ESP32-C3: no flash/XIP layout, so the image lives in IRAM only and must be loaded by the
+        ROM loader into RAM; \pkg{.rodata} is placed in IRAM (works, but wastes instruction RAM).
+        Add \pkg{\_\_heap\_start}/\pkg{\_\_heap\_end} for the future allocator.
+\end{itemize}
+Add \pkg{ASSERT(. <= ORIGIN(SRAM) + LENGTH(SRAM), "RAM overflow")}-style checks so an oversized
+build fails at link time rather than at runtime. \prio{P2}
+\textit{Status: fixed, except for the ESP32-C3 flash (XIP) layout. Both scripts define \pkg{\_\_stack\_top}, \pkg{\_\_heap\_start}/\pkg{\_\_heap\_end} and a \pkg{NOLOAD} \pkg{.noinit} section, reserve \pkg{\_\_stack\_size} (128\,B on AVR, 8\,KB on ESP32-C3, overridable with \pkg{--defsym}), and \pkg{ASSERT} that \pkg{.data}, \pkg{.bss} and \pkg{.noinit} leave it free. AVR: \pkg{.data} is placed \pkg{> SRAM AT> FLASH}, so lld also checks the flash image size; start-up copies from \pkg{LOADADDR(.data)} (\pkg{\_sidata}) and takes SP from \pkg{\_\_stack\_top} instead of a literal. The copied \pkg{.rodata} is documented, and an \pkg{.eeprom} section sits at 0x810000. ESP32-C3: \pkg{.rodata} already moved to DRAM under A7. Running from flash needs an image header and MMU set-up from a second-stage bootloader, which is a project of its own.}
+
+\paragraph{B5. Startup is correct but opaque.}
+Both \pkg{\_\_init} functions are \pkg{@naked} and mix inline asm with C3 statements (bss loop,
+calls). Mixing is fragile in a naked function because the compiler may spill. Proposal: keep
+\pkg{\_\_init} asm-only (set SP, jump to \pkg{\_start\_c3}), and do data/bss init in a normal
+function. Also expose a \pkg{@init}-style hook list or a single \pkg{embedded::on\_boot()} weak
+function for board bring-up. \prio{P2}
+\textit{Status: fixed. The AVR \pkg{\_\_init} is asm only: it clears SREG and r1, sets SP, copies \pkg{.data} (which needs \pkg{lpm} and so cannot be C3) and jumps to \pkg{embedded\_avr\_start}, a normal function in \pkg{.init} that clears \pkg{.bss} and calls \pkg{wdt::boot}, the clock init, the hook and \pkg{start}. The ESP32-C3 start-up already had this shape. Both boards call a weak \pkg{embedded\_on\_boot} once the library is initialised and interrupts are on, just before \pkg{start()}. Firmware overrides it with \pkg{fn void ...() @export("embedded\_on\_boot")}, documented in the README.}
+
+%..............................................................................
+\subsection{Examples, documentation and CI}
+
+\paragraph{E1. CI never builds the ESP32-C3 target.}
+\pkg{example-build.yml} runs \pkg{c3c build} in \pkg{examples/blink} with no target, which builds
+only the first target (observed locally: only \pkg{blink-arduino-uno.elf} is produced). The matrix also
+lists only \pkg{blink}. Fix: build a matrix over example and target, and call the compiler with an explicit target
+name. \prio{P1}
+\textit{Status: fixed, the matrix is now example $\times$ board and passes the target explicitly.}
+
+\paragraph{E2. CI uses the stock \pkg{c3c} release while the repo tracks the pre-release.}
+The last commit is ``making it work with the current compiler''. Pin the compiler version used in
+CI (the \pkg{setup-c3} action input) and state the minimum version in the README and manifest
+\pkg{langrev}. Run the matrix against both the latest release and the nightly so breakage is
+noticed before users hit it. \prio{P1}
+\textit{Status: fixed. CI passes \pkg{version} to \pkg{setup-c3} explicitly and runs the matrix against \pkg{nightly} (required) and \pkg{stable} (\pkg{continue-on-error} until a stable 0.8.6 exists), printing the compiler version. The README states 0.8.6 as the minimum and the manifest sets \pkg{langrev}. A fixed pre-release tag cannot be pinned because c3c only publishes a moving \pkg{latest-prerelease-tag}.}
+
+\paragraph{E3. Nightly release zips by hand.}
+Replace the \pkg{zip} step with a \pkg{source-lib} project target (or \pkg{c3c source-lib}) so the
+compiler packages the library in the format \pkg{c3c fetch} expects, and attach a size report
+(\pkg{avr-size}, \pkg{riscv32-esp-elf-size}) of the examples to each release to track regressions.
+\prio{P2}
+
+\paragraph{E4. Repository hygiene.}
+No root \pkg{.gitignore}; the \pkg{.idea/} directory is committed; \pkg{flash.txt} sits at the root.
+Add \pkg{.gitignore} (\pkg{build/}, \pkg{.idea/}, \pkg{*.c3l} archives), move flashing docs to
+\pkg{docs/flashing.md}, and remove IDE files. \prio{P3}
+
+\paragraph{E5. Documentation.}
+The README is a list of two commands. Needed: a 5-minute quick start (install, \pkg{c3c fetch} or
+submodule, write \pkg{project.json} with a template, build, flash), an API reference generated
+with \pkg{c3c docgen}, a ``porting a new board'' guide, and a page per board (pin map, what the
+template enables, flash procedure, known limitations). \prio{P2}
+
+\paragraph{E6. Examples.}
+Add at least: \pkg{button\_irq}, \pkg{uart\_echo}, \pkg{adc\_read}, \pkg{pwm\_fade}, and a
+\pkg{professional/} example showing a non-blocking main loop with deadlines, fault handling and a
+\pkg{panicfn}. Use \pkg{@feat(BOARD\_...)} for per-board constants as \pkg{digital\_read} already
+does. \prio{P2}
+
+\paragraph{E7. Tests.}
+There are none. Two cheap layers: host-side unit tests for the pure parts (duration arithmetic,
+pin decoding tables, config validation) built with \pkg{c3c test} on the host target, and a
+``compile-only'' CI job that type-checks every example for every template. \prio{P2}
+
+%------------------------------------------------------------------------------
+\section{Tooling proposals}
+\label{sec:tooling}
+%------------------------------------------------------------------------------
+
+\subsection{Flashing through \pkg{exec}}
+
+\pkg{c3c} runs \pkg{exec} entries after a target is built. A template cannot force this on users
+(and should not, because it needs \pkg{--trust=full}), but the library can ship the scripts and
+the documentation:
+
+\begin{lstlisting}
+"targets": {
+  "blink-uno": {
+    "type": "executable",
+    "template": "embedded/arduino_uno",
+    "exec": [ "flash-avr.sh build/blink-uno.elf ${PORT}" ]
+  }
+}
+\end{lstlisting}
+
+\noindent
+Run as
+
+\begin{lstlisting}
+PORT=/dev/cu.usbmodem1101 c3c build blink-uno --trust=full
+\end{lstlisting}
+\noindent
+The AVR script converts
+to Intel HEX with \pkg{avr-objcopy} and calls \pkg{avrdude}; the ESP32-C3 script calls
+\pkg{esptool elf2image} and \pkg{write\_flash}. Both should auto-detect the port when
+\pkg{PORT} is unset (\pkg{/dev/cu.usbmodem*} on macOS, \pkg{/dev/ttyACM*} on Linux, \pkg{COM*} on
+Windows). A \pkg{flash.c3} script is also possible, since \pkg{exec} compiles and runs \pkg{.c3}
+files, which keeps the toolchain single-language.
+
+\subsection{Size and map reporting}
+
+Add a \pkg{size} target or script that prints \pkg{text/data/bss} per build and fails above a
+threshold configured in \pkg{vendor} metadata (e.g.\ 32\,K flash, 2\,K SRAM for the Uno). Pass
+\pkg{-Map} via \pkg{link-args} in the debug template so users can inspect what pulled in what.
+
+\subsection{Register definitions from vendor data}
+
+Both vendors publish machine-readable register descriptions (Atmel \pkg{.atdf}, Espressif
+SVD). A small generator (Python or C3) producing \pkg{regs.c3} with constants and bitstructs
+would remove the magic numbers (B3) and make adding an MCU mostly mechanical. Place it under
+\pkg{tools/} and check in the generated output so users never run it.
+
+\subsection{Project scaffolding}
+
+\pkg{c3c init} accepts \pkg{--template <path>}. Ship \pkg{templates/project/} in the library so a
+new firmware project is one command:
+
+\begin{lstlisting}
+c3c init myfw --template path/to/embedded.c3l/templates/project
+\end{lstlisting}
+\noindent
+The generated
+\pkg{project.json} should already contain one target per supported board using the library
+templates.
+
+\subsection{Editor support}
+
+Publish the \pkg{board::Pin} constsets and the API \pkg{.c3i} files as the documented surface and
+run \pkg{c3c docgen} in CI to a GitHub Pages site. The \pkg{--lsp} flag exists; recommend the C3
+language server in the README with a snippet for the two IDEs most users have.
+
+%------------------------------------------------------------------------------
+\section{Upstream (\pkg{c3c}) items worth raising}
+\label{sec:upstream}
+%------------------------------------------------------------------------------
+
+These cannot be solved inside the library and are worth filing or contributing:
+
+\begin{enumerate}
+  \item \textbf{Interrupt calling convention.} LLVM supports \pkg{avr-interrupt}/\pkg{avr-signal}
+        and the RISC-V \pkg{interrupt} attribute. Exposing them as
+        \pkg{@callconv("interrupt")} would delete the hand-written push/pop in \pkg{\_\_vector\_16}
+        and make user ISRs safe.
+  \item \textbf{AVR as a supported architecture.} \pkg{arch\_is\_supported} excludes AVR, hence the
+        warning on every build. A test-suite entry for \pkg{elf-avr} (compile-only) would be the
+        first step; the library's examples are good candidates.
+  \item \textbf{\pkg{extension} and output naming in templates.} Works today but is undocumented;
+        a documentation PR listing which keys templates may set would help library authors.
+  \item \textbf{Linker-script discovery.} \pkg{-T arduino.ld} resolves only because \pkg{linklib-dir}
+        is added as \pkg{-L}. A first-class \pkg{linker-script} key would be clearer and
+        would allow templates to switch scripts per board (F4).
+  \item \textbf{\pkg{c3c build} with no target builds only the first target.} Either document it or
+        add \pkg{c3c build --all}.
+  \item \textbf{Freestanding stdlib subset.} A documented list of stdlib modules that compile
+        with \pkg{use-stdlib=true}, \pkg{link-libc=false}, \pkg{memory-env=none} would unblock A10.
+\end{enumerate}
+
+%------------------------------------------------------------------------------
+\section{Prioritised roadmap}
+%------------------------------------------------------------------------------
+
+\begin{enumerate}[label=\textbf{Step \arabic*.},leftmargin=*,itemsep=4pt]
+  \item \textbf{Template hardening (one afternoon).} Add \pkg{function-sections},
+        \pkg{data-sections}, \pkg{extension} to both templates; add \pkg{version}/\pkg{authors}/\pkg{langrev};
+        strip \pkg{name}/\pkg{extension} from the examples; fix CI to build every target of every example
+        and pin the compiler version. (F1, F2, F5, E1, E2)
+  \item \textbf{API correctness.} Unify \pkg{PinState}; make \pkg{toggle} rethrow; move watchdog
+        handling into \pkg{embedded::wdt}; add \pkg{gpio::output}/\pkg{gpio::input} one-liners with
+        default arguments. (A1, A2, A3, A9)
+  \item \textbf{Handles and hot paths.} Introduce \pkg{Output}/\pkg{Input} handles with cached
+        register and mask; stop calling \pkg{disable\_pwm} on every write. (A4)
+  \item \textbf{Debug profile and panics.} Add \pkg{<board>\_debug} templates and a documented
+        \pkg{panicfn}; add \pkg{ASSERT}s to linker scripts. (F3, B4)
+  \item \textbf{Restructure backends.} Consistent module names, shared \pkg{src/rt}, named
+        registers, asm-only \pkg{\_\_init}. (B1, B2, B3, B5)
+  \item \textbf{Interrupts and UART.} \pkg{embedded::irq}, weak vector table, \pkg{@isr} macro,
+        then UART with an \pkg{OutStream}. Re-add the \pkg{uart\_echo} example. (A7, A8)
+  \item \textbf{Tooling.} \pkg{exec}-based flashing scripts, size report in CI, \pkg{source-lib}
+        packaging, \pkg{c3c init} project template, generated docs. (F7, E3, Section~\ref{sec:tooling})
+  \item \textbf{Stdlib on RISC-V.} Evaluate \pkg{use-stdlib=true} for the ESP32-C3 template; add
+        a bump allocator; document what works. (A10)
+  \item \textbf{Peripherals.} ADC, PWM, external interrupts, I2C, SPI, each with the same
+        \pkg{.c3i} / Config / Capability / handle pattern. (A8)
+  \item \textbf{Upstream.} File the interrupt-callconv and AVR-support issues with the
+        examples as reproducers. (Section~\ref{sec:upstream})
+\end{enumerate}
+
+\vspace{1em}
+\noindent
+Steps 1 and 2 need no API discussion and halve the firmware size while removing the two
+correctness traps. Steps 3 to 5 define the ``professional'' shape of the API and should be
+done before more peripherals are added, because every new module will copy the pattern that
+exists at that time.
+
+\end{document}
