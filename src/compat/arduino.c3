@@ -5,14 +5,10 @@ import embedded::time;
 
 fn void pin_mode(gpio::Pin pin, PinMode mode) {
     switch (mode) {
-        case PinMode.OUTPUT:
-            (void)gpio::configure(pin, { gpio::Direction.OUTPUT, gpio::Pull.NONE, gpio::OutputType.PUSH_PULL, gpio::DriveStrength.DEFAULT, gpio::PinState.LOW });
-        case PinMode.INPUT:
-            (void)gpio::configure(pin, { gpio::Direction.INPUT, gpio::Pull.NONE, gpio::OutputType.PUSH_PULL, gpio::DriveStrength.DEFAULT, gpio::PinState.LOW });
-        case PinMode.INPUT_PULLUP:
-            (void)gpio::configure(pin, { gpio::Direction.INPUT, gpio::Pull.UP, gpio::OutputType.PUSH_PULL, gpio::DriveStrength.DEFAULT, gpio::PinState.LOW });
-        case PinMode.INPUT_PULLDOWN:
-            (void)gpio::configure(pin, { gpio::Direction.INPUT, gpio::Pull.DOWN, gpio::OutputType.PUSH_PULL, gpio::DriveStrength.DEFAULT, gpio::PinState.LOW });
+        case PinMode.OUTPUT:         (void)gpio::configure(pin, gpio::CONFIG_OUTPUT_LOW);
+        case PinMode.INPUT:          (void)gpio::configure(pin, gpio::CONFIG_INPUT);
+        case PinMode.INPUT_PULLUP:   (void)gpio::configure(pin, gpio::CONFIG_INPUT_PULLUP);
+        case PinMode.INPUT_PULLDOWN: (void)gpio::configure(pin, gpio::CONFIG_INPUT_PULLDOWN);
         default:
     }
 }

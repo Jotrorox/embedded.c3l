@@ -1,5 +1,6 @@
 {
   "provides": "embedded",
+  "langrev": "1",
   "linklib-dir": "linked-libs",
   "sources": [
     "src/api/**",
@@ -14,6 +15,7 @@
       "use-stdlib": false,
       "link-libc": false,
       "no-entry": true,
+      "extension": ".elf",
       "features": [
         "BOARD_ARDUINO_UNO",
         "MCU_ATMEGA328P",
@@ -34,6 +36,7 @@
       "use-stdlib": false,
       "link-libc": false,
       "no-entry": true,
+      "extension": ".elf",
       "features": [
         "BOARD_ESP32C3_SUPERMINI",
         "MCU_ESP32C3",

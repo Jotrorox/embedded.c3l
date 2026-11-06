@@ -126,3 +126,50 @@ fn void? reset(Pin pin) {
     reg_write(pin_io_mux_reg(pin), IO_MUX_INPUT_VALUE);
     reg_write(GPIO_ENABLE_W1TC, pin_mask(pin));
 }
+
+// Handles. GPIO0..21 all live in the single 32-bit GPIO_OUT / GPIO_IN bank and
+// have dedicated set/clear registers, so the bit mask is all a handle needs.
+struct Output {
+    uint mask;
+}
+
+struct Input {
+    uint mask;
+}
+
+fn Output? output(Pin pin, PinState initial = PinState.LOW) @inline {
+    configure(pin, { .direction = Direction.OUTPUT, .initial_state = initial })!;
+    return { pin_mask(pin) };
+}
+
+fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
+    configure(pin, { .direction = Direction.INPUT, .pull = pull })!;
+    return { pin_mask(pin) };
+}
+
+fn void Output.set(self) @inline {
+    reg_write(GPIO_OUT_W1TS, self.mask);
+}
+
+fn void Output.clear(self) @inline {
+    reg_write(GPIO_OUT_W1TC, self.mask);
+}
+
+fn void Output.toggle(self) @inline {
+    reg_write((reg_read(GPIO_OUT_REG) & self.mask) != 0 ? GPIO_OUT_W1TC : GPIO_OUT_W1TS, self.mask);
+}
+
+fn void Output.write(self, PinState state) @inline {
+    reg_write(state != PinState.LOW ? GPIO_OUT_W1TS : GPIO_OUT_W1TC, self.mask);
+}
+
+fn PinState Output.read(self) @inline {
+    return (reg_read(GPIO_OUT_REG) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn PinState Input.read(self) @inline {
+    return (reg_read(GPIO_IN_REG) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn bool Input.is_high(self) @inline => self.read() == PinState.HIGH;
+fn bool Input.is_low(self) @inline => self.read() == PinState.LOW;

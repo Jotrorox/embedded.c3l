@@ -8,17 +8,7 @@
   "sources": [ "src/**" ],
   "output": "build",
   "targets": {
-    "digital-read-arduino-uno": {
-      "type": "executable",
-      "template": "embedded/arduino_uno",
-      "name": "digital-read-arduino-uno",
-      "extension": ".elf"
-    },
-    "digital-read-esp32c3": {
-      "type": "executable",
-      "template": "embedded/esp32c3_supermini",
-      "name": "digital-read-esp32c3",
-      "extension": ".elf"
-    }
+    "digital-read-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
+    "digital-read-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
   }
 }

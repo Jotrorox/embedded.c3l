@@ -52,6 +52,11 @@ constdef Capability : inline char {
     DRIVE_STRENGTH,
 }
 
+// Pin configuration. Every field's zero value is the conservative default
+// (floating push-pull input, default drive, output latch LOW), so a config
+// only names what differs, using designated initialisers:
+//
+//     gpio::configure(pin, { .direction = OUTPUT, .initial_state = HIGH })!;
 struct Config {
     Direction direction;
     Pull pull;
@@ -59,6 +64,12 @@ struct Config {
     DriveStrength drive_strength;
     PinState initial_state;
 }
+
+const Config CONFIG_INPUT          = { .direction = Direction.INPUT };
+const Config CONFIG_INPUT_PULLUP   = { .direction = Direction.INPUT, .pull = Pull.UP };
+const Config CONFIG_INPUT_PULLDOWN = { .direction = Direction.INPUT, .pull = Pull.DOWN };
+const Config CONFIG_OUTPUT_LOW     = { .direction = Direction.OUTPUT };
+const Config CONFIG_OUTPUT_HIGH    = { .direction = Direction.OUTPUT, .initial_state = PinState.HIGH };
 
 fn bool is_valid(Pin pin);
 fn bool supports(Pin pin, Capability cap);
@@ -69,3 +80,34 @@ fn PinState? read(Pin pin);
 fn void? toggle(Pin pin);
 fn PinState? read_output(Pin pin);
 fn void? reset(Pin pin);
+
+// Configured-pin handles.
+//
+// `output()` and `input()` configure a pin and return a handle that caches
+// the decoded register address and bit mask, so the handle methods do no
+// validation, cannot fail, and compile to a few instructions. Use them in
+// hot paths such as bit-banged protocols. The pin-number functions above
+// stay available as the simple layer.
+//
+//     gpio::Output led = gpio::output(board::Pin.BUILTIN_LED)!;
+//     led.toggle();
+//
+// `Output` and `Input` are small value types whose layout is backend-specific.
+// Copy them freely, but only create them with `output()` / `input()`. A handle
+// stays valid until the pin is reconfigured or reset.
+fn Output? output(Pin pin, PinState initial = PinState.LOW);
+fn Input? input(Pin pin, Pull pull = Pull.NONE);
+
+// Every backend defines `Output` and `Input` together with these methods.
+// (They are listed here as comments because a `.c3i` cannot declare methods
+// that a backend then defines.)
+//
+//     fn void Output.set(self);
+//     fn void Output.clear(self);
+//     fn void Output.toggle(self);
+//     fn void Output.write(self, PinState state);
+//     fn PinState Output.read(self);    // output latch, i.e. the driven level
+//
+//     fn PinState Input.read(self);
+//     fn bool Input.is_high(self);
+//     fn bool Input.is_low(self);

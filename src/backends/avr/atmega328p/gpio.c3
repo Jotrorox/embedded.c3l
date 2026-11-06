@@ -105,9 +105,10 @@ fn void? configure(Pin pin, Config config) {
     }
 }
 
+// Does not touch the timers: `configure()` and `reset()` already take the pin
+// away from a PWM output, so doing it again here would only slow the hot path.
 fn void? write(Pin pin, PinState state) {
     if (!is_valid(pin)) return INVALID_PIN~;
-    disable_pwm(pin);
     char bit = get_bit(pin);
     char port = get_port(pin);
     if (state != PinState.LOW) {
@@ -143,3 +144,65 @@ fn void? reset(Pin pin) {
     reg_clr(get_ddr(pin), bit);
     reg_clr(get_port(pin), bit);
 }
+
+// Handles. Each AVR port is three consecutive I/O registers, PINx, DDRx and
+// PORTx, so caching the PINx address and the bit mask is enough. Writing a 1
+// to a PINx bit toggles the matching PORTx bit in hardware (ATmega328P
+// datasheet, 14.2.2), which makes `toggle()` a single store with no
+// read-modify-write.
+const char PORT_OFFSET = 2;
+
+struct Output {
+    char pin_reg;
+    char mask;
+}
+
+struct Input {
+    char pin_reg;
+    char mask;
+}
+
+macro char* reg_ptr(char addr) @local => (char*)(uptr)addr;
+
+fn Output? output(Pin pin, PinState initial = PinState.LOW) @inline {
+    configure(pin, { .direction = Direction.OUTPUT, .initial_state = initial })!;
+    return { get_pin_reg(pin), (char)(1 << get_bit(pin)) };
+}
+
+fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
+    configure(pin, { .direction = Direction.INPUT, .pull = pull })!;
+    return { get_pin_reg(pin), (char)(1 << get_bit(pin)) };
+}
+
+fn void Output.set(self) @inline {
+    char* port = reg_ptr(self.pin_reg + PORT_OFFSET);
+    @volatile_store(*port, @volatile_load(*port) | self.mask);
+}
+
+fn void Output.clear(self) @inline {
+    char* port = reg_ptr(self.pin_reg + PORT_OFFSET);
+    @volatile_store(*port, @volatile_load(*port) & (char)~self.mask);
+}
+
+fn void Output.toggle(self) @inline {
+    @volatile_store(*reg_ptr(self.pin_reg), self.mask);
+}
+
+fn void Output.write(self, PinState state) @inline {
+    if (state != PinState.LOW) {
+        self.set();
+    } else {
+        self.clear();
+    }
+}
+
+fn PinState Output.read(self) @inline {
+    return (@volatile_load(*reg_ptr(self.pin_reg + PORT_OFFSET)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn PinState Input.read(self) @inline {
+    return (@volatile_load(*reg_ptr(self.pin_reg)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+}
+
+fn bool Input.is_high(self) @inline => self.read() == PinState.HIGH;
+fn bool Input.is_low(self) @inline => self.read() == PinState.LOW;

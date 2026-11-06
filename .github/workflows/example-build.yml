@@ -12,12 +12,20 @@ permissions:
 
 jobs:
   build-c3-examples:
-    name: Build ${{ matrix.example }} / ${{ matrix.board }}
+    name: Build ${{ matrix.example }} / ${{ matrix.board }} (c3c ${{ matrix.compiler }})
     runs-on: ubuntu-latest
+    # The library needs c3c 0.8.6, which is still a pre-release, so the
+    # nightly leg is the one that must pass. The stable leg shows when the
+    # current release can build the library; it is informational until a
+    # stable 0.8.6 exists and the minimum version in the README is met by it.
+    continue-on-error: ${{ matrix.compiler == 'stable' }}
 
     strategy:
       fail-fast: false
       matrix:
+        compiler:
+          - nightly
+          - stable
         example:
           - blink
           - digital_read
@@ -31,7 +39,15 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup C3
+        id: c3
         uses: jotrorox/setup-c3@v1
+        with:
+          version: ${{ matrix.compiler }}
+
+      - name: Show compiler version
+        run: |
+          echo "Release tag: ${{ steps.c3.outputs.release-tag }}"
+          c3c --version
 
       # Each example defines one target per board, named "<example>-<board>"
       # with underscores replaced by dashes. `c3c build` without a target only

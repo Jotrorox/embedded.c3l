@@ -8,17 +8,7 @@
   "sources": [ "src/**" ],
   "output": "build",
   "targets": {
-    "watchdog-arduino-uno": {
-      "type": "executable",
-      "template": "embedded/arduino_uno",
-      "name": "watchdog-arduino-uno",
-      "extension": ".elf"
-    },
-    "watchdog-esp32c3": {
-      "type": "executable",
-      "template": "embedded/esp32c3_supermini",
-      "name": "watchdog-esp32c3",
-      "extension": ".elf"
-    }
+    "watchdog-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
+    "watchdog-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
   }
 }
