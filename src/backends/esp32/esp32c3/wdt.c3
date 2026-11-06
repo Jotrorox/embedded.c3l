@@ -1,4 +1,4 @@
-module embedded::wdt;
+module embedded::wdt @feat(MCU_ESP32C3);
 
 import embedded::time;
 import embedded::backends::esp32::esp32c3::regs;

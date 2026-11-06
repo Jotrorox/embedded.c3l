@@ -1,4 +1,8 @@
-module embedded::board;
+module embedded::board @feat(BOARD_ARDUINO_UNO);
+
+// A board only works on its MCU. The `embedded/arduino_uno` template sets both
+// features; a target that lists its own features must keep them paired.
+$assert $feat(MCU_ATMEGA328P) : "BOARD_ARDUINO_UNO needs the MCU_ATMEGA328P feature (use the embedded/arduino_uno template)";
 
 import embedded::gpio;
 import embedded::uart;

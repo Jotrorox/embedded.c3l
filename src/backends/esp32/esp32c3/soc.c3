@@ -1,4 +1,4 @@
-module embedded::backends::esp32::esp32c3::soc;
+module embedded::backends::esp32::esp32c3::soc @feat(MCU_ESP32C3);
 
 import embedded::gpio;
 import embedded::backends::esp32::esp32c3::regs;

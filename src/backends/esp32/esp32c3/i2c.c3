@@ -1,4 +1,4 @@
-module embedded::i2c;
+module embedded::i2c @feat(MCU_ESP32C3);
 
 import embedded::gpio;
 import embedded::time;

@@ -1,10 +1,15 @@
 {
   "provides": "embedded",
+  "version": "0.1.0",
+  "authors": [ "Johannes (jotrorox) Müller" ],
   "langrev": "1",
   "linklib-dir": "linked-libs",
   "sources": [
     "src/api/**",
-    "src/compat/**"
+    "src/compat/**",
+    "src/core/**",
+    "src/rt/**",
+    "src/boards/**"
   ],
   "templates": {
     "arduino_uno": {
@@ -21,6 +26,7 @@
         "MCU_ATMEGA328P",
         "BACKEND_AVR"
       ],
+      "link-args": [ "-T", "atmega328p.ld" ],
       "function-sections": true,
       "data-sections": true
     },
@@ -42,40 +48,79 @@
         "MCU_ESP32C3",
         "BACKEND_ESP32C3"
       ],
+      "link-args": [ "-T", "esp32c3.ld" ],
       "function-sections": true,
       "data-sections": true
     }
   },
   "targets": {
     "elf-avr": {
-      "sources": [
-        "src/core/core.c3",
-        "src/rt/**",
-        "src/boards/arduino_uno/**",
-        "src/backends/avr/atmega328p/**"
-      ],
-      "link-args": [
-        "-T",
-        "arduino.ld",
-        "--gc-sections"
-      ],
-      "dependencies": [],
-      "linked-libraries": []
+      "sources": [ "src/backends/avr/**" ],
+      "link-args": [ "--gc-sections" ]
     },
     "elf-riscv32": {
-      "sources": [
-        "src/core/core.c3",
-        "src/rt/**",
-        "src/boards/esp32c3_supermini/**",
-        "src/backends/esp32/esp32c3/**"
-      ],
-      "link-args": [
-        "-T",
-        "esp32c3.ld",
-        "--gc-sections"
-      ],
-      "dependencies": [],
-      "linked-libraries": []
+      "sources": [ "src/backends/esp32/**" ],
+      "link-args": [ "--gc-sections" ]
+    }
+  },
+  "vendor": {
+    "embedded": {
+      "schema": 1,
+      "mcus": {
+        "atmega328p": {
+          "arch": "avr",
+          "target": "elf-avr",
+          "feature": "MCU_ATMEGA328P",
+          "linker-script": "atmega328p.ld",
+          "flash-bytes": 32768,
+          "ram-bytes": 2048,
+          "eeprom-bytes": 1024
+        },
+        "esp32c3": {
+          "arch": "riscv32",
+          "target": "elf-riscv32",
+          "feature": "MCU_ESP32C3",
+          "linker-script": "esp32c3.ld",
+          "flash-bytes": 4194304,
+          "ram-bytes": 393216
+        }
+      },
+      "boards": {
+        "arduino_uno": {
+          "name": "Arduino Uno",
+          "template": "arduino_uno",
+          "mcu": "atmega328p",
+          "feature": "BOARD_ARDUINO_UNO",
+          "clock-hz": 16000000,
+          "usb": { "vid": "0x2341", "pid": "0x0043" },
+          "flash": {
+            "tool": "avrdude",
+            "format": "ihex",
+            "chip": "atmega328p",
+            "programmer": "arduino",
+            "baud": 115200,
+            "port": { "linux": "/dev/ttyACM*", "macos": "/dev/cu.usbmodem*", "windows": "COM*" }
+          }
+        },
+        "esp32c3_supermini": {
+          "name": "ESP32-C3 SuperMini",
+          "template": "esp32c3_supermini",
+          "mcu": "esp32c3",
+          "feature": "BOARD_ESP32C3_SUPERMINI",
+          "usb": { "vid": "0x303a", "pid": "0x1001" },
+          "flash": {
+            "tool": "esptool",
+            "format": "esp-image",
+            "chip": "esp32c3",
+            "baud": 460800,
+            "offset": "0x0",
+            "flash-mode": "dio",
+            "flash-freq": "40m",
+            "flash-size": "4MB",
+            "port": { "linux": "/dev/ttyACM*", "macos": "/dev/cu.usbmodem*", "windows": "COM*" }
+          }
+        }
+      }
     }
   }
 }

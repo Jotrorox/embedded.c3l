@@ -1,4 +1,4 @@
-module embedded::i2c;
+module embedded::i2c @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::time;

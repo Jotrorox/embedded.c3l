@@ -17,6 +17,15 @@ not import AVR, ESP32-C3, or other backend-specific modules directly.
 - `embedded/arduino_uno`
 - `embedded/esp32c3_supermini`
 
+A template sets the CPU, the linker script and two features: `BOARD_<name>`
+selects the pin map in `src/boards/` and `MCU_<name>` the backend in
+`src/backends/`. Every board and backend module is guarded by its feature, so
+one manifest target per architecture (`elf-avr`, `elf-riscv32`) serves every
+board built on it. Adding an ATmega328P board means a new board file and a
+template, nothing else. `manifest.json` also describes each board and MCU in
+its `vendor.embedded` block (memory sizes, USB ids, flash tool and settings)
+for tools that need that data without parsing C3.
+
 ## Examples
 
 ```sh
@@ -82,7 +91,27 @@ time::spin(time::us(10));                             // busy-wait, works with i
 ```
 
 The examples cover each module: `uart_echo`, `analog_read`, `pwm_fade`,
-`button_irq`, `i2c_scan`, `spi_loopback`.
+`button_irq`, `i2c_scan`, `spi_loopback`. `professional` puts them together
+the way production firmware would: a non-blocking main loop of deadline-driven
+tasks, faults counted and reported instead of fatal, the watchdog fed once per
+pass, and a `panicfn` that reports failed contracts and bounds checks before
+the watchdog resets the chip.
+
+## Tests
+
+`test/` holds host-side unit tests for the code that does not touch
+hardware: the runtime arithmetic helpers, duration and deadline maths (against
+a fake clock), UART number formatting (against a fake port) and the GPIO pin
+tables. There is one target per MCU, because each one compiles that MCU's
+backend:
+
+```sh
+cd test
+c3c test atmega328p
+c3c test esp32c3
+```
+
+CI runs both and builds every example for every board.
 
 ## Startup and memory
 

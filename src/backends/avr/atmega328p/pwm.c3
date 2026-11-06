@@ -1,4 +1,4 @@
-module embedded::pwm;
+module embedded::pwm @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::irq;

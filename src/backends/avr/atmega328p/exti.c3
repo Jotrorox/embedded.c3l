@@ -1,4 +1,4 @@
-module embedded::exti;
+module embedded::exti @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::irq;

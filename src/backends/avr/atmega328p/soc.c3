@@ -1,4 +1,4 @@
-module embedded::backends::avr::atmega328p::soc;
+module embedded::backends::avr::atmega328p::soc @feat(MCU_ATMEGA328P);
 
 // Shared ATmega328P definitions for the backend modules. Not part of the
 // public API.

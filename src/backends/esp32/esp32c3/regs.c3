@@ -1,4 +1,4 @@
-module embedded::backends::esp32::esp32c3::regs;
+module embedded::backends::esp32::esp32c3::regs @feat(MCU_ESP32C3);
 
 // ESP32-C3 register addresses and fields used by the backend. Not part of
 // the public API. Addresses and fields follow the ESP32-C3 Technical

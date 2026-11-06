@@ -1,4 +1,4 @@
-module embedded::gpio;
+module embedded::gpio @feat(MCU_ATMEGA328P);
 
 import embedded::backends::avr::atmega328p::regs;
 
@@ -177,12 +177,12 @@ fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
 
 fn void Output.set(self) @inline {
     char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
-    @volatile_store(*port, @volatile_load(*port) | self.mask);
+    @volatile_store(*port, (char)(@volatile_load(*port) | self.mask));
 }
 
 fn void Output.clear(self) @inline {
     char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
-    @volatile_store(*port, @volatile_load(*port) & (char)~self.mask);
+    @volatile_store(*port, (char)(@volatile_load(*port) & ~self.mask));
 }
 
 fn void Output.toggle(self) @inline {

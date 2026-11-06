@@ -1,0 +1,28 @@
+{
+  "langrev": "1",
+  "authors": [ "Johannes (jotrorox) Müller" ],
+  "version": "0.1.0",
+  "warnings": [ "no-unused" ],
+  "dependency-search-paths": [ "../../.." ],
+  "dependencies": [ "embedded" ],
+  "sources": [ "src/**" ],
+  "output": "build",
+  "targets": {
+    "professional-arduino-uno": {
+      "type": "executable",
+      "template": "embedded/arduino_uno",
+      "safe": true,
+      "panic-msg": true,
+      "show-backtrace": true,
+      "panicfn": "professional::on_panic"
+    },
+    "professional-esp32c3": {
+      "type": "executable",
+      "template": "embedded/esp32c3_supermini",
+      "safe": true,
+      "panic-msg": true,
+      "show-backtrace": true,
+      "panicfn": "professional::on_panic"
+    }
+  }
+}

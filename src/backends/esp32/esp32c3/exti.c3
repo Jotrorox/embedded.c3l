@@ -1,4 +1,4 @@
-module embedded::exti;
+module embedded::exti @feat(MCU_ESP32C3);
 
 import embedded::gpio;
 import embedded::irq;

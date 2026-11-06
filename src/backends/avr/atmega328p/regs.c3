@@ -1,4 +1,4 @@
-module embedded::backends::avr::atmega328p::regs;
+module embedded::backends::avr::atmega328p::regs @feat(MCU_ATMEGA328P);
 
 // ATmega328P register map: memory-mapped addresses (I/O address + 0x20, the
 // form `lds`/`sts` and pointers use) and bit fields, named as in the

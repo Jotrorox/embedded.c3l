@@ -1,4 +1,4 @@
-module embedded::spi;
+module embedded::spi @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::backends::avr::atmega328p::soc;

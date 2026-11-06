@@ -1,4 +1,4 @@
-module embedded::irq;
+module embedded::irq @feat(MCU_ATMEGA328P);
 
 import embedded::backends::avr::atmega328p::soc;
 import embedded::backends::avr::atmega328p::regs;

@@ -1,4 +1,4 @@
-module embedded::adc;
+module embedded::adc @feat(MCU_ESP32C3);
 
 import embedded::gpio;
 import embedded::time;

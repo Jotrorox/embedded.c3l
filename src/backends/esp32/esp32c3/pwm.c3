@@ -1,4 +1,4 @@
-module embedded::pwm;
+module embedded::pwm @feat(MCU_ESP32C3);
 
 import embedded::gpio;
 import embedded::irq;

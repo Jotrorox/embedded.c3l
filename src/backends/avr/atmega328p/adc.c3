@@ -1,4 +1,4 @@
-module embedded::adc;
+module embedded::adc @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::time;

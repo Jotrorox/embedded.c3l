@@ -1,4 +1,4 @@
-module embedded::irq;
+module embedded::irq @feat(MCU_ESP32C3);
 
 import embedded::backends::esp32::esp32c3::soc;
 import embedded::backends::esp32::esp32c3::regs;

@@ -1,4 +1,4 @@
-module embedded::gpio;
+module embedded::gpio @feat(MCU_ESP32C3);
 
 import embedded::backends::esp32::esp32c3::regs;
 
@@ -10,11 +10,11 @@ const uint IO_MUX_OUTPUT_VALUE = regs::IO_MUX_MCU_SEL_GPIO | regs::IO_MUX_FUN_DR
 const uint GPIO_FUNC_OUTPUT_VALUE = regs::GPIO_OUT_SIGNAL_SIMPLE | regs::GPIO_FUNC_OUT_OEN_SEL;
 
 fn void reg_write(uint addr, uint value) {
-    @volatile_store(*(uint*)addr, value);
+    @volatile_store(*(uint*)(uptr)addr, value);
 }
 
 fn uint reg_read(uint addr) {
-    return @volatile_load(*(uint*)addr);
+    return @volatile_load(*(uint*)(uptr)addr);
 }
 
 fn bool is_valid(Pin pin) {

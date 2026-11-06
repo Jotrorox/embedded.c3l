@@ -36,6 +36,7 @@ jobs:
           - button_irq
           - i2c_scan
           - spi_loopback
+          - professional
         board:
           - arduino-uno
           - esp32c3
@@ -64,3 +65,35 @@ jobs:
           target="$(echo "${{ matrix.example }}" | tr '_' '-')-${{ matrix.board }}"
           c3c build "$target"
           ls -la build/
+
+  # Host-side unit tests for the parts of the library that do not touch
+  # hardware: runtime arithmetic, duration and deadline maths (against a fake
+  # clock), UART number formatting (against a fake port) and the GPIO pin
+  # tables. One test target per MCU, because each compiles that MCU's backend.
+  host-tests:
+    name: Host tests / ${{ matrix.mcu }} (c3c ${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.compiler == 'stable' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - nightly
+          - stable
+        mcu:
+          - atmega328p
+          - esp32c3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup C3
+        uses: jotrorox/setup-c3@v1
+        with:
+          version: ${{ matrix.compiler }}
+
+      - name: Run tests
+        working-directory: test
+        run: c3c test ${{ matrix.mcu }}

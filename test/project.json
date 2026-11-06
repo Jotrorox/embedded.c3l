@@ -1,0 +1,35 @@
+{
+  "langrev": "1",
+  "authors": [ "Johannes (jotrorox) Müller" ],
+  "version": "0.1.0",
+  "warnings": [ "no-unused" ],
+  "sources": [
+    "../src/rt/**",
+    "../src/api/gpio.c3i",
+    "../src/api/time.c3i",
+    "../src/api/time_common.c3",
+    "../src/api/uart.c3i",
+    "../src/api/uart_format.c3",
+    "support/**"
+  ],
+  "test-sources": [ "unit/**" ],
+  "output": "build",
+  "targets": {
+    "atmega328p": {
+      "type": "test",
+      "features": [ "MCU_ATMEGA328P", "BACKEND_AVR" ],
+      "sources": [
+        "../src/backends/avr/atmega328p/gpio.c3",
+        "../src/backends/avr/atmega328p/regs.c3"
+      ]
+    },
+    "esp32c3": {
+      "type": "test",
+      "features": [ "MCU_ESP32C3", "BACKEND_ESP32C3" ],
+      "sources": [
+        "../src/backends/esp32/esp32c3/gpio.c3",
+        "../src/backends/esp32/esp32c3/regs.c3"
+      ]
+    }
+  }
+}

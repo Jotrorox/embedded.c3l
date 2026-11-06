@@ -1,4 +1,8 @@
-module embedded::board;
+module embedded::board @feat(BOARD_ESP32C3_SUPERMINI);
+
+// A board only works on its MCU. The `embedded/esp32c3_supermini` template sets both
+// features; a target that lists its own features must keep them paired.
+$assert $feat(MCU_ESP32C3) : "BOARD_ESP32C3_SUPERMINI needs the MCU_ESP32C3 feature (use the embedded/esp32c3_supermini template)";
 
 import embedded::gpio;
 import embedded::uart;

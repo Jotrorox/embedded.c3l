@@ -1,4 +1,4 @@
-module embedded::uart;
+module embedded::uart @feat(MCU_ATMEGA328P);
 
 import embedded::gpio;
 import embedded::irq;

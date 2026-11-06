@@ -1,4 +1,4 @@
-module embedded::backends::avr::atmega328p::startup @private;
+module embedded::backends::avr::atmega328p::startup @private @feat(MCU_ATMEGA328P);
 
 import embedded::wdt;
 

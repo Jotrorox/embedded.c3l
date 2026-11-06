@@ -1,4 +1,4 @@
-module embedded::wdt;
+module embedded::wdt @feat(MCU_ATMEGA328P);
 
 import embedded::time;
 import embedded::backends::avr::atmega328p::regs;
