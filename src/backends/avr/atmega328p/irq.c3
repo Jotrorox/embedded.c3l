@@ -1,6 +1,6 @@
 module embedded::irq @feat(MCU_ATMEGA328P);
 
-import embedded::backends::avr::atmega328p::soc;
+import embedded::core;
 import embedded::backends::avr::atmega328p::regs;
 
 // The saved status register. Only its I bit matters to `restore()`.
@@ -48,11 +48,11 @@ fn void disable() @inline
     @compiler_barrier();
 }
 
-fn bool is_enabled() @inline => (soc::read8(regs::SREG) & regs::SREG_I) != 0;
+fn bool is_enabled() @inline => (@reg_read(regs::SREG) & regs::SREG_I) != 0;
 
 fn State save_and_disable() @inline
 {
-    State state = (State)soc::read8(regs::SREG);
+    State state = (State)@reg_read(regs::SREG);
     asm("cli");
     @compiler_barrier();
     return state;
@@ -61,7 +61,7 @@ fn State save_and_disable() @inline
 fn void restore(State state) @inline
 {
     @compiler_barrier();
-    soc::write8(regs::SREG, (char)state);
+    @reg_write(regs::SREG, (char)state);
 }
 
 // Body of an interrupt vector. Saves the call-clobbered registers, calls the

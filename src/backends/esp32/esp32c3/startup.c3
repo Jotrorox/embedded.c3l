@@ -1,5 +1,6 @@
 module embedded::backends::esp32::esp32c3::startup @private @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::wdt;
 import embedded::irq;
 

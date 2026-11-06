@@ -9,6 +9,22 @@
   "output": "build",
   "targets": {
     "spi-loopback-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
-    "spi-loopback-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
+    "spi-loopback-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" },
+    "spi-loopback-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+    "spi-loopback-esp32c3-debug": { "type": "executable", "template": "embedded/esp32c3_supermini_debug" },
+    "flash-arduino-uno": {
+      "type": "prepare",
+      "depends-on": [ "spi-loopback-arduino-uno" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 arduino_uno build/spi-loopback-arduino-uno.elf" ]
+    },
+    "flash-esp32c3": {
+      "type": "prepare",
+      "depends-on": [ "spi-loopback-esp32c3" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 esp32c3_supermini build/spi-loopback-esp32c3.elf" ]
+    }
   }
 }

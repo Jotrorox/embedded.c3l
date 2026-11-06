@@ -1,5 +1,6 @@
 module embedded::exti @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::irq;
 import embedded::backends::esp32::esp32c3::soc;
@@ -36,10 +37,10 @@ fn void? attach(gpio::Pin pin, Trigger trigger, irq::Handler handler) {
 
     uint mask = 1u << (uint)pin;
     irq::@critical() {
-        soc::modify(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK, 0);
+        @reg_update(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK, 0);
         handlers[(uint)pin] = handler;
-        soc::write(regs::GPIO_STATUS_W1TC, mask);
-        soc::modify(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK,
+        @reg_write(regs::GPIO_STATUS_W1TC, mask);
+        @reg_update(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK,
             (type << regs::GPIO_PIN_INT_TYPE_SHIFT) | regs::GPIO_PIN_INT_ENA_CPU);
     };
 }
@@ -47,8 +48,8 @@ fn void? attach(gpio::Pin pin, Trigger trigger, irq::Handler handler) {
 fn void detach(gpio::Pin pin) {
     if (!gpio::is_valid(pin)) return;
     irq::@critical() {
-        soc::modify(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK, 0);
-        soc::write(regs::GPIO_STATUS_W1TC, 1u << (uint)pin);
+        @reg_update(soc::pin_reg(pin), regs::GPIO_PIN_INT_TYPE_MASK | regs::GPIO_PIN_INT_ENA_MASK, 0);
+        @reg_write(regs::GPIO_STATUS_W1TC, 1u << (uint)pin);
         handlers[(uint)pin] = null;
     };
 }
@@ -57,8 +58,8 @@ fn void detach(gpio::Pin pin) {
 // while the handler runs is not lost. A level trigger whose level persists
 // fires again right after the handler returns.
 fn void dispatch() @local {
-    uint pending = soc::read(regs::GPIO_STATUS);
-    soc::write(regs::GPIO_STATUS_W1TC, pending);
+    uint pending = @reg_read(regs::GPIO_STATUS);
+    @reg_write(regs::GPIO_STATUS_W1TC, pending);
     for (uint pin = 0; pin < PIN_COUNT; pin++) {
         if ((pending & (1u << pin)) == 0) continue;
         irq::Handler handler = handlers[pin];

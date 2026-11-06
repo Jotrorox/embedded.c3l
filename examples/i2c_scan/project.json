@@ -9,6 +9,22 @@
   "output": "build",
   "targets": {
     "i2c-scan-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
-    "i2c-scan-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
+    "i2c-scan-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" },
+    "i2c-scan-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+    "i2c-scan-esp32c3-debug": { "type": "executable", "template": "embedded/esp32c3_supermini_debug" },
+    "flash-arduino-uno": {
+      "type": "prepare",
+      "depends-on": [ "i2c-scan-arduino-uno" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 arduino_uno build/i2c-scan-arduino-uno.elf" ]
+    },
+    "flash-esp32c3": {
+      "type": "prepare",
+      "depends-on": [ "i2c-scan-esp32c3" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 esp32c3_supermini build/i2c-scan-esp32c3.elf" ]
+    }
   }
 }

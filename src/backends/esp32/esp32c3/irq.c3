@@ -1,6 +1,6 @@
 module embedded::irq @feat(MCU_ESP32C3);
 
-import embedded::backends::esp32::esp32c3::soc;
+import embedded::core;
 import embedded::backends::esp32::esp32c3::regs;
 
 // The saved mstatus CSR. Only its MIE bit matters to `restore()`.
@@ -101,7 +101,7 @@ fn void? attach(Source source, Handler handler, char priority = 1) {
     State state = save_and_disable();
     defer restore(state);
 
-    if (soc::read(map_reg(source)) != 0) return ALREADY_ATTACHED~;
+    if (@reg_read(map_reg(source)) != 0) return ALREADY_ATTACHED~;
     uint line = 0;
     for (uint candidate = 1; candidate < LINE_COUNT; candidate++) {
         if (!line_handlers[candidate]) {
@@ -112,10 +112,10 @@ fn void? attach(Source source, Handler handler, char priority = 1) {
     if (line == 0) return NO_FREE_LINE~;
 
     line_handlers[line] = handler;
-    soc::write(regs::INTC_CPU_INT_PRI_0 + line * 4, priority);
-    soc::clear_bits(regs::INTC_CPU_INT_TYPE, 1u << line); // level-triggered
-    soc::write(map_reg(source), line);
-    soc::set_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
+    @reg_write(regs::INTC_CPU_INT_PRI_0 + line * 4, priority);
+    @reg_clear_bits(regs::INTC_CPU_INT_TYPE, 1u << line); // level-triggered
+    @reg_write(map_reg(source), line);
+    @reg_set_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
 }
 
 fn void detach(Source source) {
@@ -123,10 +123,10 @@ fn void detach(Source source) {
     State state = save_and_disable();
     defer restore(state);
 
-    uint line = soc::read(map_reg(source)) & regs::INTC_MAP_LINE_MASK;
+    uint line = @reg_read(map_reg(source)) & regs::INTC_MAP_LINE_MASK;
     if (line == 0) return;
-    soc::clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
-    soc::write(map_reg(source), 0);
+    @reg_clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
+    @reg_write(map_reg(source), 0);
     line_handlers[line] = null;
 }
 
@@ -134,11 +134,11 @@ fn void detach(Source source) {
 // every source (the boot ROM may have left some connected), disables every
 // line and lets priority 1 and above through.
 fn void init() {
-    soc::write(regs::INTC_CPU_INT_ENABLE, 0);
-    for (uint source = 0; source < SOURCE_COUNT; source++) soc::write(map_reg(source), 0);
-    soc::write(regs::INTC_CPU_INT_CLEAR, 0xFFFF_FFFF);
-    soc::write(regs::INTC_CPU_INT_CLEAR, 0);
-    soc::write(regs::INTC_CPU_INT_THRESH, 1);
+    @reg_write(regs::INTC_CPU_INT_ENABLE, 0);
+    for (uint source = 0; source < SOURCE_COUNT; source++) @reg_write(map_reg(source), 0);
+    @reg_write(regs::INTC_CPU_INT_CLEAR, 0xFFFF_FFFF);
+    @reg_write(regs::INTC_CPU_INT_CLEAR, 0);
+    @reg_write(regs::INTC_CPU_INT_THRESH, 1);
 }
 
 // Called for a CPU exception (illegal instruction, misaligned or faulting
@@ -161,7 +161,7 @@ fn void dispatch(uint mcause, uint mepc, uint mtval) @export("embedded_esp32_tra
         handler();
     } else {
         // Nothing to call, and a level interrupt would fire again at once.
-        soc::clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
+        @reg_clear_bits(regs::INTC_CPU_INT_ENABLE, 1u << line);
     }
 }
 

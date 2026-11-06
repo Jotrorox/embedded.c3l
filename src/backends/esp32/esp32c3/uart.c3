@@ -1,5 +1,6 @@
 module embedded::uart @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::time;
 import embedded::backends::esp32::esp32c3::soc;
@@ -86,19 +87,19 @@ fn Uart? open_pins(Port port, gpio::Pin tx, gpio::Pin rx, Config config = {}) {
     // ESP-IDF's order: hold the core in reset while the bus clock and the
     // peripheral reset are cycled, otherwise TX may glitch.
     uint periph = port == Port.UART1 ? regs::PERIP_UART1 : regs::PERIP_UART0;
-    soc::set_bits(regs::SYSTEM_PERIP_CLK_EN0, periph | regs::PERIP_UART_MEM);
-    soc::set_bits(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_RST_CORE);
-    soc::set_bits(regs::SYSTEM_PERIP_RST_EN0, periph);
-    soc::clear_bits(regs::SYSTEM_PERIP_RST_EN0, periph);
-    soc::clear_bits(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_RST_CORE);
+    @reg_set_bits(regs::SYSTEM_PERIP_CLK_EN0, periph | regs::PERIP_UART_MEM);
+    @reg_set_bits(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_RST_CORE);
+    @reg_set_bits(regs::SYSTEM_PERIP_RST_EN0, periph);
+    @reg_clear_bits(regs::SYSTEM_PERIP_RST_EN0, periph);
+    @reg_clear_bits(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_RST_CORE);
 
-    soc::write(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_SCLK_SEL_XTAL | regs::UART_CLK_CONF_SCLK_EN
+    @reg_write(reg(port, regs::UART_CLK_CONF), regs::UART_CLK_CONF_SCLK_SEL_XTAL | regs::UART_CLK_CONF_SCLK_EN
         | regs::UART_CLK_CONF_RX_SCLK_EN | regs::UART_CLK_CONF_TX_SCLK_EN
         | ((sclk_div - 1) << regs::UART_CLK_CONF_SCLK_DIV_NUM_SHIFT));
-    soc::write(reg(port, regs::UART_CLKDIV), ((clkdiv & 0xF) << regs::UART_CLKDIV_FRAG_SHIFT) | (clkdiv >> 4));
-    soc::write(reg(port, regs::UART_CONF0), conf0 | regs::UART_CONF0_TXFIFO_RST | regs::UART_CONF0_RXFIFO_RST);
-    soc::write(reg(port, regs::UART_CONF0), conf0);
-    soc::write(reg(port, regs::UART_INT_CLR), 0xFFFF_FFFF);
+    @reg_write(reg(port, regs::UART_CLKDIV), ((clkdiv & 0xF) << regs::UART_CLKDIV_FRAG_SHIFT) | (clkdiv >> 4));
+    @reg_write(reg(port, regs::UART_CONF0), conf0 | regs::UART_CONF0_TXFIFO_RST | regs::UART_CONF0_RXFIFO_RST);
+    @reg_write(reg(port, regs::UART_CONF0), conf0);
+    @reg_write(reg(port, regs::UART_INT_CLR), 0xFFFF_FFFF);
 
     uint signal = port == Port.UART1 ? regs::SIG_U1 : regs::SIG_U0;
     soc::route_input(signal, rx, pull_up: true);
@@ -118,9 +119,9 @@ fn void Uart.close(self) {
 
 fn uint Uart.baud(self) {
     if (self.port == Port.USB_SERIAL_JTAG) return 0;
-    uint div = soc::read(reg(self.port, regs::UART_CLKDIV));
+    uint div = @reg_read(reg(self.port, regs::UART_CLKDIV));
     uint clkdiv = ((div & regs::UART_CLKDIV_INT_MASK) << 4) | ((div & regs::UART_CLKDIV_FRAG_MASK) >> regs::UART_CLKDIV_FRAG_SHIFT);
-    uint sclk_div = ((soc::read(reg(self.port, regs::UART_CLK_CONF)) & regs::UART_CLK_CONF_SCLK_DIV_NUM_MASK) >> regs::UART_CLK_CONF_SCLK_DIV_NUM_SHIFT) + 1;
+    uint sclk_div = ((@reg_read(reg(self.port, regs::UART_CLK_CONF)) & regs::UART_CLK_CONF_SCLK_DIV_NUM_MASK) >> regs::UART_CLK_CONF_SCLK_DIV_NUM_SHIFT) + 1;
     if (clkdiv == 0) return 0;
     return (uint)(((ulong)soc::XTAL_HZ << 4) / ((ulong)clkdiv * sclk_div));
 }
@@ -128,15 +129,15 @@ fn uint Uart.baud(self) {
 // Waits up to 50 ms for room in the USB regs::UART_FIFO. Returns false (and remembers
 // the stall) when no host is reading.
 fn bool usj_wait_free() @local {
-    if (soc::read(regs::USJ_EP1_CONF) & regs::USJ_IN_EP_DATA_FREE) {
+    if (@reg_read(regs::USJ_EP1_CONF) & regs::USJ_IN_EP_DATA_FREE) {
         usj_stalled = false;
         return true;
     }
     if (usj_stalled) return false;
-    soc::write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
+    @reg_write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
     time::Instant deadline = time::deadline_after(time::us(USJ_STALL_TIMEOUT_US));
     while (!time::has_elapsed(deadline)) {
-        if (soc::read(regs::USJ_EP1_CONF) & regs::USJ_IN_EP_DATA_FREE) return true;
+        if (@reg_read(regs::USJ_EP1_CONF) & regs::USJ_IN_EP_DATA_FREE) return true;
     }
     usj_stalled = true;
     return false;
@@ -145,13 +146,13 @@ fn bool usj_wait_free() @local {
 fn void Uart.write_byte(self, char byte) {
     if (self.port == Port.USB_SERIAL_JTAG) {
         if (!usj_wait_free()) return;
-        soc::write(regs::USJ_EP1, byte);
-        soc::write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
+        @reg_write(regs::USJ_EP1, byte);
+        @reg_write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
         return;
     }
     uint status = reg(self.port, regs::UART_STATUS);
-    while ((soc::read(status) & regs::UART_STATUS_TXFIFO_CNT_MASK) >> regs::UART_STATUS_TXFIFO_CNT_SHIFT >= TX_FIFO_SIZE) {}
-    soc::write(reg(self.port, regs::UART_FIFO), byte);
+    while ((@reg_read(status) & regs::UART_STATUS_TXFIFO_CNT_MASK) >> regs::UART_STATUS_TXFIFO_CNT_SHIFT >= TX_FIFO_SIZE) {}
+    @reg_write(reg(self.port, regs::UART_FIFO), byte);
 }
 
 fn void Uart.write(self, char[] bytes) {
@@ -162,37 +163,37 @@ fn void Uart.write(self, char[] bytes) {
     // One USB packet per regs::UART_FIFO load instead of one per byte.
     foreach (byte : bytes) {
         if (!usj_wait_free()) return;
-        soc::write(regs::USJ_EP1, byte);
+        @reg_write(regs::USJ_EP1, byte);
     }
-    soc::write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
+    @reg_write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
 }
 
 fn void Uart.flush(self) {
     if (self.port == Port.USB_SERIAL_JTAG) {
-        soc::write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
+        @reg_write(regs::USJ_EP1_CONF, regs::USJ_WR_DONE);
         return;
     }
-    while ((soc::read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_TXFIFO_CNT_MASK) != 0) {}
-    while ((soc::read(reg(self.port, regs::UART_FSM_STATUS)) & regs::UART_FSM_ST_UTX_OUT_MASK) != 0) {}
+    while ((@reg_read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_TXFIFO_CNT_MASK) != 0) {}
+    while ((@reg_read(reg(self.port, regs::UART_FSM_STATUS)) & regs::UART_FSM_ST_UTX_OUT_MASK) != 0) {}
 }
 
 fn bool Uart.can_read(self) {
-    if (self.port == Port.USB_SERIAL_JTAG) return (soc::read(regs::USJ_EP1_CONF) & regs::USJ_OUT_EP_DATA_AVAIL) != 0;
-    return (soc::read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_RXFIFO_CNT_MASK) != 0;
+    if (self.port == Port.USB_SERIAL_JTAG) return (@reg_read(regs::USJ_EP1_CONF) & regs::USJ_OUT_EP_DATA_AVAIL) != 0;
+    return (@reg_read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_RXFIFO_CNT_MASK) != 0;
 }
 
 fn char? Uart.try_read(self) {
     if (self.port == Port.USB_SERIAL_JTAG) {
-        if ((soc::read(regs::USJ_EP1_CONF) & regs::USJ_OUT_EP_DATA_AVAIL) == 0) return NO_DATA~;
-        return (char)soc::read(regs::USJ_EP1);
+        if ((@reg_read(regs::USJ_EP1_CONF) & regs::USJ_OUT_EP_DATA_AVAIL) == 0) return NO_DATA~;
+        return (char)@reg_read(regs::USJ_EP1);
     }
-    if ((soc::read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_RXFIFO_CNT_MASK) == 0) return NO_DATA~;
-    char byte = (char)soc::read(reg(self.port, regs::UART_FIFO));
+    if ((@reg_read(reg(self.port, regs::UART_STATUS)) & regs::UART_STATUS_RXFIFO_CNT_MASK) == 0) return NO_DATA~;
+    char byte = (char)@reg_read(reg(self.port, regs::UART_FIFO));
     // The error flags are sticky interrupt bits rather than per byte, so an
     // error is reported once, with the next byte read after it happened.
-    uint errors = soc::read(reg(self.port, regs::UART_INT_RAW)) & INT_LINE_ERRORS;
+    uint errors = @reg_read(reg(self.port, regs::UART_INT_RAW)) & INT_LINE_ERRORS;
     if (errors != 0) {
-        soc::write(reg(self.port, regs::UART_INT_CLR), errors);
+        @reg_write(reg(self.port, regs::UART_INT_CLR), errors);
         if (errors & regs::UART_INT_RXFIFO_OVF) return OVERRUN~;
         if (errors & regs::UART_INT_FRM_ERR) return FRAMING_ERROR~;
         return PARITY_ERROR~;

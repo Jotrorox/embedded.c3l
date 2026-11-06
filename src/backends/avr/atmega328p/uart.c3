@@ -1,5 +1,6 @@
 module embedded::uart @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::irq;
 import embedded::backends::avr::atmega328p::soc;
@@ -74,34 +75,34 @@ fn Uart? open_pins(Port port, gpio::Pin tx, gpio::Pin rx, Config config = {}) {
     }
     if (config.stop_bits == StopBits.TWO) frame |= regs::USBS0;
 
-    soc::write8(regs::UCSR0B, 0);
-    soc::write8(regs::UCSR0A, double_speed ? regs::U2X0 : 0);
-    soc::write8(regs::UBRR0H, (char)(ubrr >> 8));
-    soc::write8(regs::UBRR0L, (char)ubrr);
-    soc::write8(regs::UCSR0C, frame);
-    soc::write8(regs::UCSR0B, regs::RXEN0 | regs::TXEN0);
+    @reg_write(regs::UCSR0B, 0);
+    @reg_write(regs::UCSR0A, double_speed ? regs::U2X0 : 0);
+    @reg_write(regs::UBRR0H, (char)(ubrr >> 8));
+    @reg_write(regs::UBRR0L, (char)ubrr);
+    @reg_write(regs::UCSR0C, frame);
+    @reg_write(regs::UCSR0B, regs::RXEN0 | regs::TXEN0);
     tx_pending = false;
     return { port };
 }
 
 fn void Uart.close(self) {
     self.flush();
-    soc::write8(regs::UCSR0B, 0);
+    @reg_write(regs::UCSR0B, 0);
 }
 
 fn uint Uart.baud(self) {
-    uint ubrr = (uint)(soc::read8(regs::UBRR0H) & regs::UBRR0H_MASK) << 8 | soc::read8(regs::UBRR0L);
-    return rate_for(ubrr, (soc::read8(regs::UCSR0A) & regs::U2X0) != 0);
+    uint ubrr = (uint)(@reg_read(regs::UBRR0H) & regs::UBRR0H_MASK) << 8 | @reg_read(regs::UBRR0L);
+    return rate_for(ubrr, (@reg_read(regs::UCSR0A) & regs::U2X0) != 0);
 }
 
 fn void Uart.write_byte(self, char byte) {
-    while ((soc::read8(regs::UCSR0A) & regs::UDRE0) == 0) {}
+    while ((@reg_read(regs::UCSR0A) & regs::UDRE0) == 0) {}
     // Queue the byte, then clear TXC0 (write one, keep U2X0, error flags
     // written as zero). In this order, and with interrupts off, a TXC0 left
     // over from the previous byte cannot make `flush()` return early.
     irq::@critical() {
-        soc::write8(regs::UDR0, byte);
-        soc::write8(regs::UCSR0A, (soc::read8(regs::UCSR0A) & regs::U2X0) | regs::TXC0);
+        @reg_write(regs::UDR0, byte);
+        @reg_write(regs::UCSR0A, (@reg_read(regs::UCSR0A) & regs::U2X0) | regs::TXC0);
         tx_pending = true;
     };
 }
@@ -112,18 +113,18 @@ fn void Uart.write(self, char[] bytes) {
 
 fn void Uart.flush(self) {
     if (!tx_pending) return;
-    while ((soc::read8(regs::UCSR0A) & regs::TXC0) == 0) {}
+    while ((@reg_read(regs::UCSR0A) & regs::TXC0) == 0) {}
     tx_pending = false;
 }
 
-fn bool Uart.can_read(self) => (soc::read8(regs::UCSR0A) & regs::RXC0) != 0;
+fn bool Uart.can_read(self) => (@reg_read(regs::UCSR0A) & regs::RXC0) != 0;
 
 fn char? Uart.try_read(self) {
-    char status = soc::read8(regs::UCSR0A);
+    char status = @reg_read(regs::UCSR0A);
     if ((status & regs::RXC0) == 0) return NO_DATA~;
     // The error flags belong to the byte at the head of the FIFO, so they
     // must be read before UDR0.
-    char byte = soc::read8(regs::UDR0);
+    char byte = @reg_read(regs::UDR0);
     if (status & regs::FE0) return FRAMING_ERROR~;
     if (status & regs::DOR0) return OVERRUN~;
     if (status & regs::UPE0) return PARITY_ERROR~;

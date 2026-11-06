@@ -1,5 +1,6 @@
 module embedded::pwm @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::irq;
 import embedded::backends::esp32::esp32c3::soc;
@@ -37,7 +38,7 @@ fn uint timer_reg(char timer) @local => regs::LEDC_TIMER0_CONF + (uint)timer * r
 
 fn void init() @local {
     soc::enable_peripheral(regs::PERIP_LEDC);
-    soc::write(regs::LEDC_CONF, regs::LEDC_CONF_CLK_EN | regs::LEDC_CONF_APB_CLK_SEL_XTAL);
+    @reg_write(regs::LEDC_CONF, regs::LEDC_CONF_CLK_EN | regs::LEDC_CONF_APB_CLK_SEL_XTAL);
     for (uint i = 0; i < CHANNEL_COUNT; i++) channel_pin[i] = NO_PIN;
     ledc_ready = true;
 }
@@ -59,8 +60,8 @@ fn uint? program_timer(char timer, uint hz) @local {
     if (div < 256 || div > regs::LEDC_TIMER_CLK_DIV_MAX) return UNSUPPORTED_FREQUENCY~;
 
     uint conf = ((uint)div << regs::LEDC_TIMER_CLK_DIV_SHIFT) | bits;
-    soc::write(timer_reg(timer), conf | regs::LEDC_TIMER_RST);
-    soc::write(timer_reg(timer), conf | regs::LEDC_TIMER_PARA_UP);
+    @reg_write(timer_reg(timer), conf | regs::LEDC_TIMER_RST);
+    @reg_write(timer_reg(timer), conf | regs::LEDC_TIMER_PARA_UP);
     timer_hz[timer] = hz;
     timer_resolution[timer] = (char)bits;
     return (uint)(((ulong)soc::XTAL_HZ << 8) / (div << bits));
@@ -90,7 +91,7 @@ fn void release_timer(char timer) @local {
 
 fn void attach_timer(char index, char timer) @local {
     channel_timer[index] = timer;
-    soc::write(ch_reg(index, regs::LEDC_CH_CONF0), (uint)timer | regs::LEDC_CH_SIG_OUT_EN | regs::LEDC_CH_PARA_UP);
+    @reg_write(ch_reg(index, regs::LEDC_CH_CONF0), (uint)timer | regs::LEDC_CH_SIG_OUT_EN | regs::LEDC_CH_PARA_UP);
 }
 
 fn Channel? open(gpio::Pin pin, Config config = {}) {
@@ -111,7 +112,7 @@ fn Channel? open(gpio::Pin pin, Config config = {}) {
     uint hz = config.frequency_hz == 0 ? DEFAULT_HZ : config.frequency_hz;
     char timer = acquire_timer(hz)!;
     channel_pin[index] = (char)pin;
-    soc::write(ch_reg(index, regs::LEDC_CH_HPOINT), 0);
+    @reg_write(ch_reg(index, regs::LEDC_CH_HPOINT), 0);
     attach_timer(index, timer);
     Channel channel = { index };
     channel.set_duty(config.duty_permille);
@@ -126,14 +127,14 @@ fn void Channel.set_duty(self, uint permille) {
     // The duty register is fixed point with 4 fraction bits; the integer part
     // may equal 2^bits for a steady high level.
     uint duty = (permille << bits) / MAX_DUTY;
-    soc::write(ch_reg(self.index, regs::LEDC_CH_DUTY), duty << regs::LEDC_CH_DUTY_FRAC_BITS);
-    soc::write(ch_reg(self.index, regs::LEDC_CH_CONF1), CH_DUTY_UPDATE);
-    soc::set_bits(ch_reg(self.index, regs::LEDC_CH_CONF0), regs::LEDC_CH_PARA_UP);
+    @reg_write(ch_reg(self.index, regs::LEDC_CH_DUTY), duty << regs::LEDC_CH_DUTY_FRAC_BITS);
+    @reg_write(ch_reg(self.index, regs::LEDC_CH_CONF1), CH_DUTY_UPDATE);
+    @reg_set_bits(ch_reg(self.index, regs::LEDC_CH_CONF0), regs::LEDC_CH_PARA_UP);
 }
 
 fn uint Channel.frequency(self) {
     char timer = channel_timer[self.index];
-    uint conf = soc::read(timer_reg(timer));
+    uint conf = @reg_read(timer_reg(timer));
     ulong div = (ulong)((conf >> regs::LEDC_TIMER_CLK_DIV_SHIFT) & regs::LEDC_TIMER_CLK_DIV_MAX);
     if (div == 0) return 0;
     return (uint)(((ulong)soc::XTAL_HZ << 8) / (div << (conf & regs::LEDC_TIMER_DUTY_RES_MASK)));
@@ -159,7 +160,7 @@ fn uint? Channel.set_frequency(self, uint hz) {
 fn void Channel.close(self) {
     irq::State state = irq::save_and_disable();
     defer irq::restore(state);
-    soc::write(ch_reg(self.index, regs::LEDC_CH_CONF0), regs::LEDC_CH_PARA_UP); // output off, idle low
+    @reg_write(ch_reg(self.index, regs::LEDC_CH_CONF0), regs::LEDC_CH_PARA_UP); // output off, idle low
     release_timer(channel_timer[self.index]);
     soc::release_pin((gpio::Pin)channel_pin[self.index]);
     channel_pin[self.index] = NO_PIN;

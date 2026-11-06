@@ -1,5 +1,6 @@
 module embedded::gpio @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::backends::avr::atmega328p::regs;
 
 fn char get_port(Pin pin) {
@@ -26,34 +27,14 @@ fn char get_bit(Pin pin) {
     return (char)((int)pin - 14);
 }
 
-fn void reg_set(char addr, char bit) {
-    char* r = (char*)(uptr)addr;
-    @volatile_store(*r, (char)(@volatile_load(*r) | (char)(1 << bit)));
-}
-
-fn void reg_clr(char addr, char bit) {
-    char* r = (char*)(uptr)addr;
-    @volatile_store(*r, (char)(@volatile_load(*r) & (char)~(1 << bit)));
-}
-
-fn void reg_clr_mask(char addr, char mask) {
-    char* r = (char*)(uptr)addr;
-    @volatile_store(*r, (char)(@volatile_load(*r) & (char)~mask));
-}
-
-fn char reg_read(char addr) {
-    char* r = (char*)(uptr)addr;
-    return @volatile_load(*r);
-}
-
 fn void disable_pwm(Pin pin) {
     switch (pin) {
-        case (Pin)3:  reg_clr_mask((char)regs::TCCR2A, regs::COM_B_MASK); // OC2B
-        case (Pin)5:  reg_clr_mask((char)regs::TCCR0A, regs::COM_B_MASK); // OC0B
-        case (Pin)6:  reg_clr_mask((char)regs::TCCR0A, regs::COM_A_MASK); // OC0A
-        case (Pin)9:  reg_clr_mask((char)regs::TCCR1A, regs::COM_A_MASK); // OC1A
-        case (Pin)10: reg_clr_mask((char)regs::TCCR1A, regs::COM_B_MASK); // OC1B
-        case (Pin)11: reg_clr_mask((char)regs::TCCR2A, regs::COM_A_MASK); // OC2A
+        case (Pin)3:  @reg_clear_bits(regs::TCCR2A, regs::COM_B_MASK); // OC2B
+        case (Pin)5:  @reg_clear_bits(regs::TCCR0A, regs::COM_B_MASK); // OC0B
+        case (Pin)6:  @reg_clear_bits(regs::TCCR0A, regs::COM_A_MASK); // OC0A
+        case (Pin)9:  @reg_clear_bits(regs::TCCR1A, regs::COM_A_MASK); // OC1A
+        case (Pin)10: @reg_clear_bits(regs::TCCR1A, regs::COM_B_MASK); // OC1B
+        case (Pin)11: @reg_clear_bits(regs::TCCR2A, regs::COM_A_MASK); // OC2A
         default:
     }
 }
@@ -90,17 +71,17 @@ fn void? configure(Pin pin, Config config) {
         case Direction.OUTPUT:
             if (config.pull != Pull.NONE) return UNSUPPORTED_PULL~;
             if (config.initial_state == PinState.HIGH) {
-                reg_set(port, bit);
+                @reg_set_bits(port, 1 << bit);
             } else {
-                reg_clr(port, bit);
+                @reg_clear_bits(port, 1 << bit);
             }
-            reg_set(ddr, bit);
+            @reg_set_bits(ddr, 1 << bit);
         case Direction.INPUT:
-            reg_clr(ddr, bit);
+            @reg_clear_bits(ddr, 1 << bit);
             if (config.pull == Pull.UP) {
-                reg_set(port, bit);
+                @reg_set_bits(port, 1 << bit);
             } else {
-                reg_clr(port, bit);
+                @reg_clear_bits(port, 1 << bit);
             }
         default:
             return UNSUPPORTED_MODE~;
@@ -114,9 +95,9 @@ fn void? write(Pin pin, PinState state) {
     char bit = get_bit(pin);
     char port = get_port(pin);
     if (state != PinState.LOW) {
-        reg_set(port, bit);
+        @reg_set_bits(port, 1 << bit);
     } else {
-        reg_clr(port, bit);
+        @reg_clear_bits(port, 1 << bit);
     }
 }
 
@@ -124,7 +105,7 @@ fn PinState? read(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
     char bit = get_bit(pin);
     char pin_reg = get_pin_reg(pin);
-    return (reg_read(pin_reg) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
+    return (@reg_read(pin_reg) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn void? toggle(Pin pin) {
@@ -136,15 +117,15 @@ fn PinState? read_output(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
     char bit = get_bit(pin);
     char port = get_port(pin);
-    return (reg_read(port) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
+    return (@reg_read(port) & (char)(1 << bit)) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn void? reset(Pin pin) {
     if (!is_valid(pin)) return INVALID_PIN~;
     disable_pwm(pin);
     char bit = get_bit(pin);
-    reg_clr(get_ddr(pin), bit);
-    reg_clr(get_port(pin), bit);
+    @reg_clear_bits(get_ddr(pin), 1 << bit);
+    @reg_clear_bits(get_port(pin), 1 << bit);
 }
 
 // Handles. Each AVR port is three consecutive I/O registers, PINx, DDRx and
@@ -163,8 +144,6 @@ struct Input {
     char mask;
 }
 
-macro char* reg_ptr(char addr) @local => (char*)(uptr)addr;
-
 fn Output? output(Pin pin, PinState initial = PinState.LOW) @inline {
     configure(pin, { .direction = Direction.OUTPUT, .initial_state = initial })!;
     return { get_pin_reg(pin), (char)(1 << get_bit(pin)) };
@@ -176,17 +155,15 @@ fn Input? input(Pin pin, Pull pull = Pull.NONE) @inline {
 }
 
 fn void Output.set(self) @inline {
-    char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
-    @volatile_store(*port, (char)(@volatile_load(*port) | self.mask));
+    @reg_set_bits(self.pin_reg + regs::PORT_FROM_PIN, self.mask);
 }
 
 fn void Output.clear(self) @inline {
-    char* port = reg_ptr(self.pin_reg + regs::PORT_FROM_PIN);
-    @volatile_store(*port, (char)(@volatile_load(*port) & ~self.mask));
+    @reg_clear_bits(self.pin_reg + regs::PORT_FROM_PIN, self.mask);
 }
 
 fn void Output.toggle(self) @inline {
-    @volatile_store(*reg_ptr(self.pin_reg), self.mask);
+    @reg_write(self.pin_reg, self.mask);
 }
 
 fn void Output.write(self, PinState state) @inline {
@@ -198,11 +175,11 @@ fn void Output.write(self, PinState state) @inline {
 }
 
 fn PinState Output.read(self) @inline {
-    return (@volatile_load(*reg_ptr(self.pin_reg + regs::PORT_FROM_PIN)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+    return (@reg_read(self.pin_reg + regs::PORT_FROM_PIN) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn PinState Input.read(self) @inline {
-    return (@volatile_load(*reg_ptr(self.pin_reg)) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
+    return (@reg_read(self.pin_reg) & self.mask) != 0 ? PinState.HIGH : PinState.LOW;
 }
 
 fn bool Input.is_high(self) @inline => self.read() == PinState.HIGH;

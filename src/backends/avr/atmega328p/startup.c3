@@ -1,5 +1,6 @@
 module embedded::backends::avr::atmega328p::startup @private @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::wdt;
 
 extern fn void start();

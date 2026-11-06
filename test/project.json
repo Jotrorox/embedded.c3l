@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "warnings": [ "no-unused" ],
   "sources": [
+    "../src/core/**",
     "../src/rt/**",
     "../src/api/gpio.c3i",
     "../src/api/time.c3i",

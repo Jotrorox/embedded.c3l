@@ -14,8 +14,29 @@ not import AVR, ESP32-C3, or other backend-specific modules directly.
 
 ## Supported Templates
 
-- `embedded/arduino_uno`
-- `embedded/esp32c3_supermini`
+| Board | Release | Debug |
+|---|---|---|
+| Arduino Uno | `embedded/arduino_uno` | `embedded/arduino_uno_debug` |
+| ESP32-C3 SuperMini | `embedded/esp32c3_supermini` | `embedded/esp32c3_supermini_debug` |
+
+The release templates build with `Oz` and no runtime checks. The debug
+templates build with `O1`, `safe` (contracts, bounds and null checks),
+panic messages and line tables, and name `embedded::panic::handler` as the
+`panicfn`: a failed check prints its message and location on the board's
+console, then the watchdog resets the chip while the LED flashes. A target can
+override any single key of its template, for example
+`{ "template": "embedded/arduino_uno_debug", "opt": "Os" }`.
+
+`trap-on-wrap` is not in the debug templates. It applies to the library too,
+whose runtime helpers and clocks wrap on purpose, and c3c has no way to allow
+wrapping for single expressions.
+
+The checks cost space, on the Uno mostly SRAM because AVR keeps the panic
+texts there: `blink` grows from 2.2 KB flash and 114 B SRAM to 10.7 KB and
+842 B, `professional` uses 1.4 KB of the 2 KB SRAM. The panic handler is
+described in `src/api/panic.c3`, including how to hand it your own console
+and LED, and the `embedded_on_panic` hook for putting outputs into a safe
+state.
 
 A template sets the CPU, the linker script and two features: `BOARD_<name>`
 selects the pin map in `src/boards/` and `MCU_<name>` the backend in
@@ -30,8 +51,9 @@ for tools that need that data without parsing C3.
 
 ```sh
 cd examples/blink
-c3c build blink-arduino-uno
-c3c build blink-esp32c3
+c3c build blink-arduino-uno           # release
+c3c build blink-esp32c3-debug         # debug template
+c3c build flash-arduino-uno --trust=full
 ```
 
 A project target only needs a type and a template:
@@ -41,6 +63,16 @@ A project target only needs a type and a template:
   "blink-uno": { "type": "executable", "template": "embedded/arduino_uno" }
 }
 ```
+
+## Flashing
+
+Every example has `flash-arduino-uno` and `flash-esp32c3` targets. They build
+the firmware, then run `scripts/flash.c3`, which calls avrdude or esptool with
+the settings from the manifest's `vendor.embedded` block and finds the serial
+port itself (or takes it from `PORT`). Running a script needs `--trust=full`.
+`docs/flashing.md` covers the tools, port selection, dry runs and how to add a
+flash target to your own project. `scripts/size.c3` prints flash and RAM use
+against the MCU's limits.
 
 ## GPIO in short
 
@@ -111,7 +143,10 @@ c3c test atmega328p
 c3c test esp32c3
 ```
 
-CI runs both and builds every example for every board.
+CI runs both and, for every example and board, builds the release and the
+debug target, runs the flash target as a dry run and reports the sizes. The
+nightly release attaches the library archive and a size report of all
+examples.
 
 ## Startup and memory
 
@@ -131,6 +166,15 @@ ESP32-C3) and fail the link if `.data` + `.bss` leave less. Change it per target
 with `"link-args": ["--defsym=__stack_size=256"]`. Variables marked
 `@section(".noinit")` are neither loaded nor cleared, so they survive a
 watchdog reset. `__heap_start`/`__heap_end` mark the free RAM in between.
+
+## Writing a backend
+
+Backends access registers through the macros in `embedded::core`
+(`src/core/core.c3`): `@reg_read`, `@reg_write`, `@reg_set_bits`,
+`@reg_clear_bits` and `@reg_update`. They take an address and default to the
+MCU's register width (8 bits on AVR, 32 on the ESP32-C3); pass a type for
+other widths. A file that uses them needs `import embedded::core;`. Register
+addresses and fields go in the MCU's `regs.c3`.
 
 ## ToDo (central APIs)
 - [X] Digital I/O

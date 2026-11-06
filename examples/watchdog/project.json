@@ -9,6 +9,22 @@
   "output": "build",
   "targets": {
     "watchdog-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
-    "watchdog-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
+    "watchdog-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" },
+    "watchdog-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+    "watchdog-esp32c3-debug": { "type": "executable", "template": "embedded/esp32c3_supermini_debug" },
+    "flash-arduino-uno": {
+      "type": "prepare",
+      "depends-on": [ "watchdog-arduino-uno" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 arduino_uno build/watchdog-arduino-uno.elf" ]
+    },
+    "flash-esp32c3": {
+      "type": "prepare",
+      "depends-on": [ "watchdog-esp32c3" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 esp32c3_supermini build/watchdog-esp32c3.elf" ]
+    }
   }
 }

@@ -1,5 +1,6 @@
 module embedded::spi @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::backends::avr::atmega328p::soc;
 import embedded::backends::avr::atmega328p::regs;
@@ -53,13 +54,13 @@ fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config =
     gpio::configure(SCK_PIN, (spcr & regs::CPOL) ? gpio::CONFIG_OUTPUT_HIGH : gpio::CONFIG_OUTPUT_LOW)!;
     gpio::configure(MOSI_PIN, gpio::CONFIG_OUTPUT_LOW)!;
     gpio::configure(MISO_PIN, gpio::CONFIG_INPUT)!;
-    soc::write8(regs::SPSR, double_speed ? regs::SPI2X : 0);
-    soc::write8(regs::SPCR, spcr);
+    @reg_write(regs::SPSR, double_speed ? regs::SPI2X : 0);
+    @reg_write(regs::SPCR, spcr);
     return { spcr };
 }
 
 fn void Bus.close(self) {
-    soc::write8(regs::SPCR, 0);
+    @reg_write(regs::SPCR, 0);
     (void)gpio::reset(SCK_PIN);
     (void)gpio::reset(MOSI_PIN);
 }
@@ -72,14 +73,14 @@ fn uint Bus.frequency(self) {
         case 2: divider = 64;
         default: divider = 128;
     }
-    if ((soc::read8(regs::SPSR) & regs::SPI2X) != 0 && divider != 128) divider /= 2;
+    if ((@reg_read(regs::SPSR) & regs::SPI2X) != 0 && divider != 128) divider /= 2;
     return soc::CPU_HZ / divider;
 }
 
 fn char Bus.transfer_byte(self, char byte) {
-    soc::write8(regs::SPDR, byte);
-    while ((soc::read8(regs::SPSR) & regs::SPIF) == 0) {}
-    return soc::read8(regs::SPDR);
+    @reg_write(regs::SPDR, byte);
+    while ((@reg_read(regs::SPSR) & regs::SPIF) == 0) {}
+    return @reg_read(regs::SPDR);
 }
 
 fn void? Bus.transfer(self, char[] tx, char[] rx) {

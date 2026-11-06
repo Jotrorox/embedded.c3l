@@ -225,6 +225,7 @@ Proposal: ship two templates per board.
 Add a documented \pkg{panicfn} hook so that a panic can blink an LED or write to UART rather than spin
 silently. Since the templates merge with target-local settings, a user may still override any
 single key. \prio{P2}
+\textit{Status: fixed. \pkg{arduino\_uno\_debug} and \pkg{esp32c3\_supermini\_debug} build with \pkg{O1}, \pkg{safe}, \pkg{panic-msg}, \pkg{debug-info=line-tables} and \pkg{panicfn = embedded::panic::handler}; the release templates are unchanged (\pkg{Oz} already implies the proposed release settings). \pkg{O1} rather than \pkg{Os}: on the Uno it costs about 7\,\% more flash but 15\,\% less SRAM, because less inlining means fewer copies of the panic location strings, and SRAM is the scarce resource there. \pkg{trap-on-wrap} is left out: it applies to the library as well, whose runtime helpers and clocks wrap on purpose, and c3c has no per-expression opt-out. The new \pkg{embedded::panic} module (\pkg{src/api/panic.c3}) disables interrupts, calls a weak \pkg{embedded\_on\_panic} hook once (for putting outputs into a safe state), prints the message and location on \pkg{board::CONSOLE} (or a UART handed over with \pkg{panic::report\_to}), then arms the watchdog and flashes the LED until the reset. The \pkg{professional} example now uses it instead of its own copy. Every example has \pkg{-debug} targets and CI builds them; all fit, the largest on the Uno is \pkg{professional} at 15.8\,KB flash and 1.4\,KB SRAM. \pkg{-Map} is not in the templates because a template cannot name a per-target file; a target can add \pkg{"link-args": ["--Map=build/x.map"]}. Not yet run on hardware.}
 
 \paragraph{F4. One template per board bundles MCU and board; adding a second ATmega328P board
 would duplicate everything.}
@@ -236,12 +237,14 @@ AVR MCU backends, each module guarded by \pkg{@feat(MCU\_ATMEGA328P)} etc.), mov
 behind \pkg{@feat(BOARD\_...)} inside a single \pkg{src/boards/**} glob, and select the linker script
 through the template's \pkg{link-args} rather than the target's. Templates then stay thin:
 \pkg{cpu}, \pkg{features}, \pkg{link-args}. \prio{P2}
+\textit{Status: fixed. Every backend module carries \pkg{@feat(MCU\_ATMEGA328P)} or \pkg{@feat(MCU\_ESP32C3)} and every board module \pkg{@feat(BOARD\_...)}. The manifest's top-level \pkg{sources} now hold everything shared (\pkg{src/api}, \pkg{src/compat}, \pkg{src/core}, \pkg{src/rt} and all of \pkg{src/boards}), each arch target adds only its backend directory (\pkg{src/backends/avr/**}, \pkg{src/backends/esp32/**}) and \pkg{--gc-sections}, and each template selects its linker script through \pkg{link-args}. The AVR script is renamed \pkg{atmega328p.ld} since it describes the MCU, not the Uno. A board file \pkg{\$assert}s that its MCU feature is set, so pairing a board with the wrong MCU fails with a clear message. Checked by building all examples before and after: every section size and every symbol size is identical, only local-symbol suffixes differ. A throwaway second ATmega328P board (a copied board file plus a template) built next to the Uno without touching anything else.}
 
 \paragraph{F5. Missing manifest metadata and schema.}
 \pkg{manifest.json} has no \pkg{version}, \pkg{authors} or \pkg{langrev} (all accepted since 0.8.6),
 and no \pkg{vendor} block. A \pkg{vendor} block is the right place for machine-readable
 board data (flash tool, chip id, default port pattern, flash size) that a future flashing helper
 or IDE plugin can read without parsing C3. \prio{P2}
+\textit{Status: fixed. \pkg{manifest.json} has \pkg{version} (0.1.0), \pkg{authors} and \pkg{langrev}, and a \pkg{vendor.embedded} block (\pkg{schema: 1}) describing each MCU (arch, target, feature, linker script, flash/RAM/EEPROM sizes) and each board (template, MCU, feature, USB VID/PID, and flash settings: tool, image format, chip, programmer, baud, offset and flash mode where needed, and port patterns per OS). The flash settings are the ones from \pkg{flash.txt}, so an \pkg{exec} flashing helper (F7) can read them. A JSON schema for the vendor block is not written yet.}
 
 \paragraph{F6. \pkg{std::core::embedded} hijacks the standard-library namespace.}
 \pkg{core.c3} declares \pkg{module std::core::embedded} so that \pkg{@volatile\_load} and
@@ -251,6 +254,7 @@ Proposal: \pkg{module embedded::core} with the same \pkg{@builtin} macros (\pkg{
 require the \pkg{std::} prefix), and add typed register helpers (\pkg{@reg\_read}, \pkg{@reg\_write},
 \pkg{@reg\_set\_bits}, \pkg{@reg\_clear\_bits}, \pkg{@reg\_update}) so the five near-identical
 \pkg{reg\_*} helper sets in the backends collapse into one. \prio{P2}
+\textit{Status: fixed, with one module left under \pkg{std::}. \pkg{src/core/core.c3} is \pkg{embedded::core} and holds \pkg{@volatile\_load}, \pkg{@volatile\_store}, \pkg{@compiler\_barrier} and the new \pkg{@reg\_read}, \pkg{@reg\_write}, \pkg{@reg\_set\_bits}, \pkg{@reg\_clear\_bits} and \pkg{@reg\_update}, which default to the MCU's register width (\pkg{char} on AVR, \pkg{uint} on the ESP32-C3) and take a type for others. They replace all seven helper sets (AVR \pkg{soc}, \pkg{gpio}, \pkg{wdt}; ESP32-C3 \pkg{soc}, \pkg{gpio}, \pkg{time}, \pkg{wdt}); \pkg{soc::read16}/\pkg{write16} stay because they encode the TEMP-register byte order. Two compiler facts differ from the proposal. \pkg{@builtin} outside \pkg{std::} only drops the module prefix, so every backend file now has \pkg{import embedded::core}. And c3c warns about every \pkg{\$\$} builtin used outside \pkg{std::} and \pkg{compiler\_rt::}, once per macro expansion (about 180 warnings per build), with no way to silence it from a template. The five \pkg{\$\$} calls therefore sit in \pkg{std::core::embedded\_intrinsics} (\pkg{src/core/intrinsics.c3}), a private shim with a name unlikely to collide; nothing else is under \pkg{std::}. All example images are byte-identical except \pkg{professional}, which builds with \pkg{safe} and is 830\,B smaller on the Uno: the old helpers dereferenced \pkg{*(char*)addr} and so carried null checks, and the GPIO helper functions a shift-range check, none of which can fail. Host tests pass (they now include \pkg{src/core}).}
 
 \paragraph{F7. \pkg{exec} is not used; flashing is a hand-copied command.}
 \pkg{flash.txt} hard-codes Linux device paths and \pkg{esptool.py} invocations. The compiler can
@@ -258,6 +262,7 @@ run post-build scripts per target (\pkg{exec}, \pkg{env}, \pkg{\$\{NAME\}} expan
 opts in with \pkg{--trust=full}. Proposal: ship \pkg{scripts/} in the library with a portable
 \pkg{flash.c3} (or small shell scripts) and document the one-line opt-in; see
 Section~\ref{sec:tooling}. \prio{P2}
+\textit{Status: fixed, not yet run against a board. c3c runs \pkg{exec} before it compiles a target, not after, so the proposal in Section~\ref{sec:tooling} would flash the previous build. Each example instead has \pkg{flash-arduino-uno} and \pkg{flash-esp32c3} targets of type \pkg{prepare} that \pkg{depends-on} the firmware target and run \pkg{scripts/flash.c3}, with \pkg{script-dir} pointing at the library's \pkg{scripts/} and \pkg{exec-dir} at the project. The script reads the board's flash settings from the manifest's \pkg{vendor} block, takes the port from \pkg{--port}, \pkg{PORT} or the single match of the board's pattern for the OS, calls avrdude (which reads the ELF directly, so the vendor format is now \pkg{elf}) or esptool (\pkg{elf2image}, then \pkg{write\_flash}), and sends the tools' output to stderr so it appears live (c3c captures a script's stdout and prints at most 2\,KB at the end). \pkg{FLASH\_DRY\_RUN=1} prints the commands; CI runs every flash target that way. Checked locally: dry runs, missing, ambiguous and single ports, a bogus port (avrdude's error fails the build), unknown boards and missing ELFs. \pkg{flash.txt} is replaced by \pkg{docs/flashing.md}. A failed script leaves c3c's \pkg{\_\_c3exec\_\_} binary behind, which is now in \pkg{.gitignore}.}
 
 %..............................................................................
 \subsection{Public API}
@@ -480,6 +485,7 @@ Replace the \pkg{zip} step with a \pkg{source-lib} project target (or \pkg{c3c s
 compiler packages the library in the format \pkg{c3c fetch} expects, and attach a size report
 (\pkg{avr-size}, \pkg{riscv32-esp-elf-size}) of the examples to each release to track regressions.
 \prio{P2}
+\textit{Status: fixed for the size report, not possible for \pkg{source-lib}. \pkg{c3c source-lib} writes its own manifest with only \pkg{provides}, \pkg{version}, \pkg{authors}, \pkg{langrev}, \pkg{dependencies} and the source patterns, dropping \pkg{templates}, \pkg{targets}, \pkg{vendor} and \pkg{linklib-dir}, and it does not pack the linker scripts, so the result is not usable. The release keeps \pkg{zip}, which is the format \pkg{c3c fetch} expects (manifest at the root), now limited to the manifest, licence, README, \pkg{src}, \pkg{linked-libs}, \pkg{scripts} and \pkg{docs/flashing.md} (the examples are no longer in the archive). A new step builds a project against the archive and runs its flash target as a dry run through the unpacked copy. The size report comes from \pkg{scripts/size.c3}, which reads the ELF section headers itself (no \pkg{avr-size} or RISC-V binutils needed on the runner) and compares flash and RAM use with the MCU limits in the vendor block; it skips the ESP32-C3's \pkg{.dram\_dummy}, which \pkg{size} counts as a second copy of the code. The report is attached to the nightly release, put in its notes, and each CI job adds its example's sizes to the job summary.}
 
 \paragraph{E4. Repository hygiene.}
 No root \pkg{.gitignore}; the \pkg{.idea/} directory is committed; \pkg{flash.txt} sits at the root.
@@ -497,11 +503,13 @@ Add at least: \pkg{button\_irq}, \pkg{uart\_echo}, \pkg{adc\_read}, \pkg{pwm\_fa
 \pkg{professional/} example showing a non-blocking main loop with deadlines, fault handling and a
 \pkg{panicfn}. Use \pkg{@feat(BOARD\_...)} for per-board constants as \pkg{digital\_read} already
 does. \prio{P2}
+\textit{Status: fixed. \pkg{button\_irq}, \pkg{uart\_echo}, \pkg{pwm\_fade} and \pkg{analog\_read} (the ADC example) came with A8. The new \pkg{professional} example has a non-blocking main loop of deadline-driven tasks (heartbeat, debounced button poll, console commands, status report with worst-case loop time), keeps running when a peripheral fails to open, counts UART line errors, feeds the watchdog once per pass and reports a watchdog reset at boot. Its targets set \pkg{safe}, \pkg{panic-msg}, \pkg{show-backtrace} and \pkg{panicfn}. Without the stdlib, c3c calls the named function directly from its generated \pkg{std::core::runtime::panics} functions, and the handler prints the summary, file, line and function, then re-arms the watchdog and flashes the LED until it resets the chip. The checks cost about 2.9\,KB of flash and 1\,KB of SRAM on the Uno (AVR keeps the panic texts in RAM). Built for both boards and in the CI matrix, not yet run on hardware.}
 
 \paragraph{E7. Tests.}
 There are none. Two cheap layers: host-side unit tests for the pure parts (duration arithmetic,
 pin decoding tables, config validation) built with \pkg{c3c test} on the host target, and a
 ``compile-only'' CI job that type-checks every example for every template. \prio{P2}
+\textit{Status: fixed. The compile-only layer is the example $\times$ board CI matrix from E1. \pkg{test/} is a host project with one \pkg{test} target per MCU (\pkg{c3c test atmega328p}, \pkg{c3c test esp32c3}), each compiling the real library sources it needs plus that MCU's GPIO backend. It has 39 and 34 tests: the runtime helpers against the host's arithmetic (exhaustive 8-bit and sampled 16-bit AVR \pkg{divmod}, random 32/64-bit operands, every 64-bit shift amount, \pkg{memmove} in both directions), duration and deadline maths against a fake clock (saturation, counter wrap, the $2^{62}$ deadline clamp), \pkg{uart\_format} against a fake port (32-bit boundary, \pkg{long.min}, hex padding, \pkg{read\_byte} timeout) and the GPIO pin tables (ATmega328P port decoding, ESP32-C3 valid pins and IO\_MUX/GPIO register addresses). Putting back the old AVR quotient/remainder swap or removing the deadline clamp makes them fail. To make the time code testable, the duration and deadline functions both backends had copied moved into \pkg{src/api/time\_common.c3}, the same way \pkg{uart\_format.c3} is shared. Its 64-by-32-bit divider is now \pkg{@private}, so it gets inlined: \pkg{uart\_echo} is 16 bytes larger on AVR and 32 bytes smaller on ESP32-C3, and the other examples are unchanged. Compiling for the host also turned up two GPIO spots that only built because of the library's lenient \pkg{@volatile\_store}: they now cast explicitly (AVR) and widen through \pkg{uptr} (ESP32-C3), with no change on target. CI runs both test targets.}
 
 %------------------------------------------------------------------------------
 \section{Tooling proposals}
@@ -510,6 +518,7 @@ pin decoding tables, config validation) built with \pkg{c3c test} on the host ta
 
 \subsection{Flashing through \pkg{exec}}
 
+\textit{(Correction: \pkg{c3c} runs \pkg{exec} entries before a target is compiled, so flashing has to be a \pkg{prepare} target that \pkg{depends-on} the firmware target; see F7.)}
 \pkg{c3c} runs \pkg{exec} entries after a target is built. A template cannot force this on users
 (and should not, because it needs \pkg{--trust=full}), but the library can ship the scripts and
 the documentation:

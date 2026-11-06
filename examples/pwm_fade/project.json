@@ -9,6 +9,22 @@
   "output": "build",
   "targets": {
     "pwm-fade-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
-    "pwm-fade-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" }
+    "pwm-fade-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" },
+    "pwm-fade-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+    "pwm-fade-esp32c3-debug": { "type": "executable", "template": "embedded/esp32c3_supermini_debug" },
+    "flash-arduino-uno": {
+      "type": "prepare",
+      "depends-on": [ "pwm-fade-arduino-uno" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 arduino_uno build/pwm-fade-arduino-uno.elf" ]
+    },
+    "flash-esp32c3": {
+      "type": "prepare",
+      "depends-on": [ "pwm-fade-esp32c3" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 esp32c3_supermini build/pwm-fade-esp32c3.elf" ]
+    }
   }
 }

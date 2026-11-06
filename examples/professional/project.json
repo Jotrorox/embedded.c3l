@@ -14,7 +14,7 @@
       "safe": true,
       "panic-msg": true,
       "show-backtrace": true,
-      "panicfn": "professional::on_panic"
+      "panicfn": "embedded::panic::handler"
     },
     "professional-esp32c3": {
       "type": "executable",
@@ -22,7 +22,23 @@
       "safe": true,
       "panic-msg": true,
       "show-backtrace": true,
-      "panicfn": "professional::on_panic"
+      "panicfn": "embedded::panic::handler"
+    },
+    "professional-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+    "professional-esp32c3-debug": { "type": "executable", "template": "embedded/esp32c3_supermini_debug" },
+    "flash-arduino-uno": {
+      "type": "prepare",
+      "depends-on": [ "professional-arduino-uno" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 arduino_uno build/professional-arduino-uno.elf" ]
+    },
+    "flash-esp32c3": {
+      "type": "prepare",
+      "depends-on": [ "professional-esp32c3" ],
+      "script-dir": "../../scripts",
+      "exec-dir": ".",
+      "exec": [ "flash.c3 esp32c3_supermini build/professional-esp32c3.elf" ]
     }
   }
 }

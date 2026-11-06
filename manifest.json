@@ -30,6 +30,28 @@
       "function-sections": true,
       "data-sections": true
     },
+    "arduino_uno_debug": {
+      "target": "elf-avr",
+      "cpu": "atmega328p",
+      "opt": "O1",
+      "safe": true,
+      "panic-msg": true,
+      "panicfn": "embedded::panic::handler",
+      "debug-info": "line-tables",
+      "linker": "builtin",
+      "use-stdlib": false,
+      "link-libc": false,
+      "no-entry": true,
+      "extension": ".elf",
+      "features": [
+        "BOARD_ARDUINO_UNO",
+        "MCU_ATMEGA328P",
+        "BACKEND_AVR"
+      ],
+      "link-args": [ "-T", "atmega328p.ld" ],
+      "function-sections": true,
+      "data-sections": true
+    },
     "esp32c3_supermini": {
       "target": "elf-riscv32",
       "cpu": "rvimac",
@@ -38,6 +60,32 @@
       "memory-env": "none",
       "reloc": "none",
       "opt": "Oz",
+      "linker": "builtin",
+      "use-stdlib": false,
+      "link-libc": false,
+      "no-entry": true,
+      "extension": ".elf",
+      "features": [
+        "BOARD_ESP32C3_SUPERMINI",
+        "MCU_ESP32C3",
+        "BACKEND_ESP32C3"
+      ],
+      "link-args": [ "-T", "esp32c3.ld" ],
+      "function-sections": true,
+      "data-sections": true
+    },
+    "esp32c3_supermini_debug": {
+      "target": "elf-riscv32",
+      "cpu": "rvimac",
+      "cpu-flags": "+m",
+      "riscv-abi": "int-only",
+      "memory-env": "none",
+      "reloc": "none",
+      "opt": "O1",
+      "safe": true,
+      "panic-msg": true,
+      "panicfn": "embedded::panic::handler",
+      "debug-info": "line-tables",
       "linker": "builtin",
       "use-stdlib": false,
       "link-libc": false,
@@ -82,20 +130,22 @@
           "feature": "MCU_ESP32C3",
           "linker-script": "esp32c3.ld",
           "flash-bytes": 4194304,
-          "ram-bytes": 393216
+          "ram-bytes": 393216,
+          "runs-from-ram": true
         }
       },
       "boards": {
         "arduino_uno": {
           "name": "Arduino Uno",
           "template": "arduino_uno",
+          "debug-template": "arduino_uno_debug",
           "mcu": "atmega328p",
           "feature": "BOARD_ARDUINO_UNO",
           "clock-hz": 16000000,
           "usb": { "vid": "0x2341", "pid": "0x0043" },
           "flash": {
             "tool": "avrdude",
-            "format": "ihex",
+            "format": "elf",
             "chip": "atmega328p",
             "programmer": "arduino",
             "baud": 115200,
@@ -105,6 +155,7 @@
         "esp32c3_supermini": {
           "name": "ESP32-C3 SuperMini",
           "template": "esp32c3_supermini",
+          "debug-template": "esp32c3_supermini_debug",
           "mcu": "esp32c3",
           "feature": "BOARD_ESP32C3_SUPERMINI",
           "usb": { "vid": "0x303a", "pid": "0x1001" },

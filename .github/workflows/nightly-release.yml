@@ -24,17 +24,88 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Create archive
-        run: |
-          mkdir -p dist
+      - name: Setup C3
+        uses: jotrorox/setup-c3@v1
+        with:
+          version: nightly
 
-          zip -r "dist/${OUTPUT_NAME}" \
-            src \
-            linked-libs \
-            examples \
+      - name: Build examples
+        run: |
+          c3c --version
+          for dir in examples/*/; do
+            example="$(basename "$dir" | tr '_' '-')"
+            for board in arduino-uno esp32c3; do
+              (cd "$dir" && c3c build "$example-$board")
+            done
+          done
+
+      # Flash and RAM use of every example with the release templates, so a
+      # size regression shows up when two nightly reports are compared.
+      - name: Size report
+        run: |
+          mkdir -p dist build
+          c3c compile -q scripts/size.c3 -o build/size
+          {
+            echo "## Example sizes"
+            echo
+            echo "Release templates, commit ${GITHUB_SHA::7}, $(c3c --version | head -n 1 | sed 's/  */ /g')."
+            echo
+            build/size --markdown arduino_uno examples/*/build/*-arduino-uno.elf
+            echo
+            build/size --markdown esp32c3_supermini examples/*/build/*-esp32c3.elf
+          } > dist/size-report.md
+          cat dist/size-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      # A .c3l is a zip with manifest.json at its root. `c3c source-lib` would
+      # write its own manifest without the templates, targets, vendor block and
+      # linklib-dir, and leave out the linker scripts, so the archive is built
+      # here. It holds what a dependent project needs: the sources, linker
+      # scripts and the flash and size scripts.
+      - name: Package library
+        run: |
+          zip -r -X "dist/${OUTPUT_NAME}" \
+            manifest.json \
             LICENSE \
             README.md \
-            manifest.json
+            src \
+            linked-libs \
+            scripts \
+            docs/flashing.md \
+            -x '*/.DS_Store'
+
+      # Builds a project against the archive, the way `c3c fetch` users get
+      # it, and runs the flash target as a dry run through the unpacked copy.
+      - name: Check the package
+        run: |
+          work="$RUNNER_TEMP/package-check"
+          mkdir -p "$work/lib"
+          cp "dist/${OUTPUT_NAME}" "$work/lib/"
+          cp -r examples/blink/src "$work/src"
+          cat > "$work/project.json" <<'EOF'
+          {
+            "langrev": "1",
+            "dependency-search-paths": [ "lib" ],
+            "dependencies": [ "embedded" ],
+            "sources": [ "src/**" ],
+            "output": "build",
+            "targets": {
+              "blink-arduino-uno": { "type": "executable", "template": "embedded/arduino_uno" },
+              "blink-esp32c3": { "type": "executable", "template": "embedded/esp32c3_supermini" },
+              "blink-arduino-uno-debug": { "type": "executable", "template": "embedded/arduino_uno_debug" },
+              "flash-arduino-uno": {
+                "type": "prepare",
+                "depends-on": [ "blink-arduino-uno" ],
+                "script-dir": "build/unpacked_c3l/embedded.c3l/scripts",
+                "exec-dir": ".",
+                "exec": [ "flash.c3 arduino_uno build/blink-arduino-uno.elf" ]
+              }
+            }
+          }
+          EOF
+          cd "$work"
+          c3c build blink-esp32c3
+          c3c build blink-arduino-uno-debug
+          FLASH_DRY_RUN=1 c3c build flash-arduino-uno --trust=full
 
       - name: Recreate nightly tag
         run: |
@@ -54,10 +125,16 @@ jobs:
 
       - name: Create nightly release
         run: |
+          {
+            echo "Automated nightly build from commit ${{ github.sha }}."
+            echo
+            cat dist/size-report.md
+          } > dist/release-notes.md
           gh release create "${RELEASE_TAG}" \
             "dist/${OUTPUT_NAME}" \
+            "dist/size-report.md" \
             --title "${RELEASE_NAME}" \
-            --notes "Automated nightly build from commit ${{ github.sha }}" \
+            --notes-file dist/release-notes.md \
             --prerelease
         env:
           GH_TOKEN: ${{ github.token }}

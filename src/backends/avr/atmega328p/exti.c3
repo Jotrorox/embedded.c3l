@@ -1,8 +1,8 @@
 module embedded::exti @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::irq;
-import embedded::backends::avr::atmega328p::soc;
 import embedded::backends::avr::atmega328p::regs;
 
 // INT0 is on PD2 (Uno D2), INT1 on PD3 (Uno D3).
@@ -38,12 +38,12 @@ fn void? attach(gpio::Pin pin, Trigger trigger, irq::Handler handler) {
     char bit = (char)(1 << line);
     char shift = (char)(line * 2);
     irq::@critical() {
-        soc::clear8(regs::EIMSK, bit);
+        @reg_clear_bits(regs::EIMSK, bit);
         handlers[line] = handler;
-        soc::write8(regs::EICRA, (soc::read8(regs::EICRA) & (char)~(regs::ISC_MASK << shift)) | (char)(sense << shift));
+        @reg_write(regs::EICRA, (@reg_read(regs::EICRA) & (char)~(regs::ISC_MASK << shift)) | (char)(sense << shift));
         // Writing a one clears the flag, so a stale edge does not fire at once.
-        soc::write8(regs::EIFR, bit);
-        soc::set8(regs::EIMSK, bit);
+        @reg_write(regs::EIFR, bit);
+        @reg_set_bits(regs::EIMSK, bit);
     };
 }
 
@@ -51,7 +51,7 @@ fn void detach(gpio::Pin pin) {
     int line = line_of(pin);
     if (line < 0) return;
     irq::@critical() {
-        soc::clear8(regs::EIMSK, (char)(1 << line));
+        @reg_clear_bits(regs::EIMSK, (char)(1 << line));
         handlers[line] = null;
     };
 }

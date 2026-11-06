@@ -7,3 +7,9 @@ docs/*.out
 docs/*.toc
 docs/*.fls
 docs/*.fdb_latexmk
+
+# Left behind by c3c when an `exec` script fails (e.g. flashing without a board)
+__c3exec__
+
+# Tools built from scripts/ (CI builds scripts/size.c3 here)
+/build/

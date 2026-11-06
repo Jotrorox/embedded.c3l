@@ -1,5 +1,6 @@
 module embedded::adc @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::time;
 import embedded::backends::esp32::esp32c3::soc;
@@ -37,9 +38,9 @@ fn uint full_scale_millivolts(Reference reference) {
 
 fn void init() @local {
     soc::enable_peripheral(regs::PERIP_APB_SARADC);
-    soc::set_bits(regs::RTC_CNTL_SENSOR_CTRL, regs::RTC_CNTL_FORCE_XPD_SAR_ON);
-    soc::write(regs::SARADC_CLKM_CONF, CLKM_CONF_VALUE);
-    soc::modify(regs::SARADC_CTRL, regs::SARADC_CTRL_XPD_SAR_FORCE_MASK | regs::SARADC_CTRL_SAR_CLK_DIV_MASK | regs::SARADC_CTRL_SAR_CLK_GATED,
+    @reg_set_bits(regs::RTC_CNTL_SENSOR_CTRL, regs::RTC_CNTL_FORCE_XPD_SAR_ON);
+    @reg_write(regs::SARADC_CLKM_CONF, CLKM_CONF_VALUE);
+    @reg_update(regs::SARADC_CTRL, regs::SARADC_CTRL_XPD_SAR_FORCE_MASK | regs::SARADC_CTRL_SAR_CLK_DIV_MASK | regs::SARADC_CTRL_SAR_CLK_GATED,
         regs::SARADC_CTRL_XPD_SAR_FORCE_ON | (1u << regs::SARADC_CTRL_SAR_CLK_DIV_SHIFT) | regs::SARADC_CTRL_SAR_CLK_GATED);
     adc_ready = true;
 }
@@ -66,15 +67,15 @@ fn ushort Input.read(self) {
     uint sample = regs::SARADC_ONETIME_ADC1
         | ((uint)self.channel << regs::SARADC_ONETIME_CHANNEL_SHIFT)
         | ((uint)self.atten << regs::SARADC_ONETIME_ATTEN_SHIFT);
-    soc::write(regs::SARADC_INT_CLR, regs::SARADC_INT_ADC1_DONE);
-    soc::write(regs::SARADC_ONETIME_SAMPLE, sample);
+    @reg_write(regs::SARADC_INT_CLR, regs::SARADC_INT_ADC1_DONE);
+    @reg_write(regs::SARADC_ONETIME_SAMPLE, sample);
     // The start edge must last a few ADC controller clocks (APB / 16) to be
     // seen; ESP-IDF waits 3 µs at 80 MHz APB.
     time::spin(time::us(5));
-    soc::write(regs::SARADC_ONETIME_SAMPLE, sample | regs::SARADC_ONETIME_START);
-    while ((soc::read(regs::SARADC_INT_RAW) & regs::SARADC_INT_ADC1_DONE) == 0) {}
-    ushort raw = (ushort)(soc::read(regs::SARADC_1_DATA_STATUS) & regs::SARADC_1_DATA_MASK);
-    soc::write(regs::SARADC_ONETIME_SAMPLE, 0);
+    @reg_write(regs::SARADC_ONETIME_SAMPLE, sample | regs::SARADC_ONETIME_START);
+    while ((@reg_read(regs::SARADC_INT_RAW) & regs::SARADC_INT_ADC1_DONE) == 0) {}
+    ushort raw = (ushort)(@reg_read(regs::SARADC_1_DATA_STATUS) & regs::SARADC_1_DATA_MASK);
+    @reg_write(regs::SARADC_ONETIME_SAMPLE, 0);
     return raw;
 }
 

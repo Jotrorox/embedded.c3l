@@ -56,7 +56,8 @@ jobs:
           echo "Release tag: ${{ steps.c3.outputs.release-tag }}"
           c3c --version
 
-      # Each example defines one target per board, named "<example>-<board>"
+      # Each example defines targets per board: "<example>-<board>" on the
+      # release template and "<example>-<board>-debug" on the debug template,
       # with underscores replaced by dashes. `c3c build` without a target only
       # builds the first one, so the target is always passed explicitly.
       - name: Build example
@@ -64,7 +65,25 @@ jobs:
         run: |
           target="$(echo "${{ matrix.example }}" | tr '_' '-')-${{ matrix.board }}"
           c3c build "$target"
+          c3c build "$target-debug"
           ls -la build/
+
+      # Runs the "flash-<board>" target as a dry run: builds the firmware,
+      # compiles scripts/flash.c3 through `exec` and prints the flash commands
+      # from the manifest's vendor block.
+      - name: Flash target (dry run)
+        working-directory: examples/${{ matrix.example }}
+        run: FLASH_DRY_RUN=1 c3c build "flash-${{ matrix.board }}" --trust=full
+
+      - name: Size
+        run: |
+          case "${{ matrix.board }}" in
+            arduino-uno) board=arduino_uno ;;
+            esp32c3) board=esp32c3_supermini ;;
+          esac
+          mkdir -p build
+          c3c compile -q scripts/size.c3 -o build/size
+          build/size --markdown "$board" examples/${{ matrix.example }}/build/*.elf >> "$GITHUB_STEP_SUMMARY"
 
   # Host-side unit tests for the parts of the library that do not touch
   # hardware: runtime arithmetic, duration and deadline maths (against a fake

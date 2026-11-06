@@ -1,5 +1,6 @@
 module embedded::spi @feat(MCU_ESP32C3);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::board;
 import embedded::backends::esp32::esp32c3::soc;
@@ -52,8 +53,8 @@ fn uint clock_register(uint hz, uint* actual) @local {
 }
 
 fn void apply_config() @local {
-    soc::write(regs::SPI_CMD, regs::SPI_CMD_UPDATE);
-    while ((soc::read(regs::SPI_CMD) & regs::SPI_CMD_UPDATE) != 0) {}
+    @reg_write(regs::SPI_CMD, regs::SPI_CMD_UPDATE);
+    while ((@reg_read(regs::SPI_CMD) & regs::SPI_CMD_UPDATE) != 0) {}
 }
 
 fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config = {}) {
@@ -75,16 +76,16 @@ fn Bus? open_pins(gpio::Pin sck, gpio::Pin mosi, gpio::Pin miso, Config config =
     }
 
     soc::enable_peripheral(regs::PERIP_SPI2);
-    soc::write(regs::SPI_CLK_GATE, CLK_GATE_VALUE);
-    soc::write(regs::SPI_SLAVE, 0);
-    soc::write(regs::SPI_DMA_CONF, 0);
-    soc::write(regs::SPI_USER, regs::SPI_USER_DOUTDIN | regs::SPI_USER_USR_MOSI | regs::SPI_USER_USR_MISO | (out_edge ? regs::SPI_USER_CK_OUT_EDGE : 0));
-    soc::write(regs::SPI_USER1, 0);
-    soc::write(regs::SPI_USER2, 0);
-    soc::write(regs::SPI_MISC, regs::SPI_MISC_CS_ALL_DISABLED | (cpol ? regs::SPI_MISC_CK_IDLE_EDGE : 0));
+    @reg_write(regs::SPI_CLK_GATE, CLK_GATE_VALUE);
+    @reg_write(regs::SPI_SLAVE, 0);
+    @reg_write(regs::SPI_DMA_CONF, 0);
+    @reg_write(regs::SPI_USER, regs::SPI_USER_DOUTDIN | regs::SPI_USER_USR_MOSI | regs::SPI_USER_USR_MISO | (out_edge ? regs::SPI_USER_CK_OUT_EDGE : 0));
+    @reg_write(regs::SPI_USER1, 0);
+    @reg_write(regs::SPI_USER2, 0);
+    @reg_write(regs::SPI_MISC, regs::SPI_MISC_CS_ALL_DISABLED | (cpol ? regs::SPI_MISC_CK_IDLE_EDGE : 0));
     uint order = config.bit_order == BitOrder.LSB_FIRST ? regs::SPI_CTRL_WR_BIT_ORDER | regs::SPI_CTRL_RD_BIT_ORDER : 0;
-    soc::modify(regs::SPI_CTRL, regs::SPI_CTRL_WR_BIT_ORDER | regs::SPI_CTRL_RD_BIT_ORDER, order);
-    soc::write(regs::SPI_CLOCK, clock);
+    @reg_update(regs::SPI_CTRL, regs::SPI_CTRL_WR_BIT_ORDER | regs::SPI_CTRL_RD_BIT_ORDER, order);
+    @reg_write(regs::SPI_CLOCK, clock);
     apply_config();
 
     bus_sck = sck;
@@ -113,16 +114,16 @@ fn void chunk(char[] tx, char[] rx, usz len, char fill) @local {
             char byte = i < len ? (tx.len > 0 ? tx[i] : fill) : fill;
             value |= (uint)byte << (8 * b);
         }
-        soc::write(regs::SPI_W0 + (uint)word * 4, value);
+        @reg_write(regs::SPI_W0 + (uint)word * 4, value);
     }
-    soc::write(regs::SPI_MS_DLEN, (uint)len * 8 - 1);
+    @reg_write(regs::SPI_MS_DLEN, (uint)len * 8 - 1);
     apply_config();
-    soc::write(regs::SPI_DMA_INT_CLR, regs::SPI_INT_TRANS_DONE);
-    soc::write(regs::SPI_CMD, regs::SPI_CMD_USR);
-    while ((soc::read(regs::SPI_DMA_INT_RAW) & regs::SPI_INT_TRANS_DONE) == 0) {}
+    @reg_write(regs::SPI_DMA_INT_CLR, regs::SPI_INT_TRANS_DONE);
+    @reg_write(regs::SPI_CMD, regs::SPI_CMD_USR);
+    while ((@reg_read(regs::SPI_DMA_INT_RAW) & regs::SPI_INT_TRANS_DONE) == 0) {}
     if (rx.len == 0) return;
     for (usz i = 0; i < len; i++) {
-        uint value = soc::read(regs::SPI_W0 + (uint)(i / 4) * 4);
+        uint value = @reg_read(regs::SPI_W0 + (uint)(i / 4) * 4);
         rx[i] = (char)(value >> (8 * (i % 4)));
     }
 }

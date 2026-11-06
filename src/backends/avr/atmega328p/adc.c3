@@ -1,8 +1,8 @@
 module embedded::adc @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::gpio;
 import embedded::time;
-import embedded::backends::avr::atmega328p::soc;
 import embedded::backends::avr::atmega328p::regs;
 
 
@@ -46,8 +46,8 @@ fn Input? open(gpio::Pin pin, Config config = {}) {
     char channel = (char)((uint)pin - FIRST_ANALOG_PIN);
     // Release the pin from GPIO and switch off its digital input buffer.
     (void)gpio::reset(pin);
-    soc::set8(regs::DIDR0, (char)(1 << channel));
-    soc::write8(regs::ADCSRA, regs::ADEN | ADPS_128);
+    @reg_set_bits(regs::DIDR0, (char)(1 << channel));
+    @reg_write(regs::ADCSRA, regs::ADEN | ADPS_128);
     return { refs | channel };
 }
 
@@ -57,16 +57,16 @@ fn ushort? read(gpio::Pin pin) {
 }
 
 fn ushort convert() @local {
-    soc::set8(regs::ADCSRA, regs::ADSC);
-    while ((soc::read8(regs::ADCSRA) & regs::ADSC) != 0) {}
+    @reg_set_bits(regs::ADCSRA, regs::ADSC);
+    while ((@reg_read(regs::ADCSRA) & regs::ADSC) != 0) {}
     // ADCL must be read first: it locks ADCH until ADCH is read.
-    char low = soc::read8(regs::ADCL);
-    return (ushort)soc::read8(regs::ADCH) << 8 | low;
+    char low = @reg_read(regs::ADCL);
+    return (ushort)@reg_read(regs::ADCH) << 8 | low;
 }
 
 fn ushort Input.read(self) {
-    char previous = soc::read8(regs::ADMUX);
-    soc::write8(regs::ADMUX, self.admux);
+    char previous = @reg_read(regs::ADMUX);
+    @reg_write(regs::ADMUX, self.admux);
     // After a reference change the AREF pin (100 nF on the Uno) has to charge
     // or discharge to the new level, which takes milliseconds; wait, then
     // discard one conversion.

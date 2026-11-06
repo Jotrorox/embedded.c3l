@@ -1,5 +1,6 @@
 module embedded::time @feat(MCU_ATMEGA328P);
 
+import embedded::core;
 import embedded::irq;
 import embedded::backends::avr::atmega328p::soc;
 import embedded::backends::avr::atmega328p::regs;
@@ -27,9 +28,9 @@ bool timer0_time_active = false;
 fn void embedded_avr_time_init() @export("embedded_avr_time_init") {
     if (timer0_time_active) return;
 
-    soc::set8(regs::TCCR0A, WGM01_WGM00);
-    soc::write8(regs::TCCR0B, (soc::read8(regs::TCCR0B) & (char)~regs::CS_MASK) | CS00_CS01);
-    soc::set8(regs::TIMSK0, regs::TOIE0);
+    @reg_set_bits(regs::TCCR0A, WGM01_WGM00);
+    @reg_write(regs::TCCR0B, (@reg_read(regs::TCCR0B) & (char)~regs::CS_MASK) | CS00_CS01);
+    @reg_set_bits(regs::TIMSK0, regs::TOIE0);
     timer0_time_active = true;
     irq::enable();
 }
@@ -39,8 +40,8 @@ fn ulong read_micros() {
 
     irq::State state = irq::save_and_disable();
     uint m = @volatile_load(timer0_overflow_count);
-    char t = soc::read8(regs::TCNT0);
-    if ((soc::read8(regs::TIFR0) & regs::TOV0) != 0 && t < 255) {
+    char t = @reg_read(regs::TCNT0);
+    if ((@reg_read(regs::TIFR0) & regs::TOV0) != 0 && t < 255) {
         m++;
     }
     irq::restore(state);
@@ -67,9 +68,9 @@ fn void sleep_until(Instant deadline) {
         // stops advancing after one missed overflow), so only idle when they
         // are on. Any interrupt ends the idle period early, which is harmless.
         if (remaining > IDLE_THRESHOLD_US && irq::is_enabled()) {
-            soc::write8(regs::SMCR, regs::SMCR_SE);
+            @reg_write(regs::SMCR, regs::SMCR_SE);
             asm("sleep");
-            soc::write8(regs::SMCR, 0);
+            @reg_write(regs::SMCR, 0);
         }
     }
 }

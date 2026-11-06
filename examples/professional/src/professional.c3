@@ -2,7 +2,7 @@ module professional;
 
 import embedded::board;
 import embedded::gpio;
-import embedded::irq;
+import embedded::panic;
 import embedded::time;
 import embedded::uart;
 import embedded::wdt;
@@ -16,14 +16,15 @@ import embedded::wdt;
 // - Recoverable faults (a missing console or button, UART line errors) are
 //   counted and reported, never fatal.
 // - Bugs are not recoverable. This target builds with `safe` on, so a failed
-//   contract, assert or bounds check calls `on_panic` (named by `panicfn` in
-//   project.json). It reports where it happened, then lets the watchdog
-//   reset the chip.
+//   contract, assert or bounds check calls the library's panic handler
+//   (`embedded::panic::handler`, named by `panicfn` in project.json). It
+//   switches the LED off through the `embedded_on_panic` hook, reports where
+//   the panic happened on the console, then lets the watchdog reset the chip.
 //
-// Keeping the checks in costs space: on the Uno about 2.9 KB of flash and
-// 1 KB of SRAM (AVR keeps the panic texts in RAM), most of it with
-// `show-backtrace` off too. Without `safe`, checks compile to nothing and
-// `on_panic` is never called.
+// Keeping the checks in costs space: on the Uno about 2.4 KB of flash and 0.8 KB
+// of SRAM (AVR keeps the panic texts in RAM). Without `safe`, checks compile
+// to nothing and the handler is never called. The `<board>_debug` templates
+// turn the same checks on for any project.
 //
 // Console (115200 baud on the Uno, any baud on the SuperMini's USB port):
 //   s  print the status report now
@@ -158,38 +159,13 @@ fn void poll_console(Stats* stats, Task* heartbeat, bool watchdog_on) {
 }
 
 // ---------------------------------------------------------------------------
-// Panic handler, named by `panicfn` in project.json. Every failed contract,
-// assert and runtime check ends here. It must not return, should not panic
-// again, and cannot rely on interrupts.
+// Called once by the library's panic handler, before it reports and resets,
+// with interrupts off. This is the place to put outputs into a safe state; here
+// the LED goes dark so the panic blink that follows is easy to tell apart from
+// the heartbeat.
 
-bool in_panic;
-
-fn void on_panic(String summary, String file, String function, int line, String fmt, any[] args) {
-    irq::disable();
-    // Report once. If reporting itself panics, skip straight to the reset.
-    if (!in_panic && console_ok) {
-        in_panic = true;
-        console.write("PANIC: ");
-        // No formatter without the standard library: `fmt` and `args` are
-        // skipped. For a contract, the location is the call that broke it.
-        console.write_line(summary.len ? summary : fmt);
-        if (file.len) {
-            console.write("  at ");
-            console.write(file);
-            console.write(":");
-            console.write_int(line);
-            console.write(" in ");
-            console.write_line(function);
-        }
-        console.flush();
-    }
-    // Make sure a reset follows even if the watchdog was not running, and
-    // flash the LED quickly until it does.
-    if (catch wdt::enable(time::ms(WATCHDOG_MS))) {}
-    while (true) {
-        if (led_ok) led.toggle();
-        time::spin(time::ms(50));
-    }
+fn void safe_state() @export("embedded_on_panic") {
+    if (led_ok) led.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -200,10 +176,12 @@ fn void firmware_start() @export("start") {
     if (try c = uart::open(board::CONSOLE)) {
         console = c;
         console_ok = true;
+        panic::report_to(console);
     }
     if (try l = gpio::output(board::Pin.BUILTIN_LED)) {
         led = l;
         led_ok = true;
+        panic::signal_with(led);
     }
     Debouncer button;
     bool button_ok;
